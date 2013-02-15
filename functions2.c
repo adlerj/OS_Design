@@ -4,36 +4,33 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-int number_of_threads;
-int number_of_nodes;
-
 //Creates an n by n matrix in a one d matrix
 //n = number_of_nodes
 //matrix[n][m] = n*number_of_nodes + m
-int *create_matrix()
+int *create_matrix(int lineCount)
 {
-	int *matrix = (int *)malloc(sizeof(int)*number_of_nodes*number_of_nodes);
+	int *matrix = (int *)malloc(sizeof(int)*lineCount*lineCount);
 	return matrix;
 }
 
 //Reads input file
 //First entry -> number of threads
 //Second entry -> number of nodes
-int *read_file (char *filename)
+int *read_file (char *filename, int * threadCount, int * lineCount)
 {
 	
-	FILE *file = fopen(filename, "r");
-	fscanf(file, "%d", &number_of_threads);
-	fscanf(file, "%d", &number_of_nodes);
+	FILE *file = fopen(filename, "r");//
+	fscanf(file, "%d", threadCount);
+	fscanf(file, "%d", lineCount);
 	
-	int *matrix = create_matrix();
+	int *matrix = create_matrix(*lineCount);
 
 	int a;
 	int b;
 	while (!feof (file))
     {
 		fscanf (file, "%d %d", &a, &b);
-		matrix[(a-1)*number_of_nodes + (b-1)] = 1;
+		matrix[(a-1)*(*lineCount) + (b-1)] = 1;
 		printf ("%d %d\n", a, b);     
     }
 	fclose (file);
@@ -41,15 +38,15 @@ int *read_file (char *filename)
 }
 
 //Prints input matrix
-void print_matrix(int *matrix)
+void print_matrix(int *matrix, int lineCount)
 {
 	int i;
 	int j;
-	for(i = 0; i < number_of_nodes; i++)
+	for(i = 0; i < lineCount; i++)
 	{
-		for(j = 0; j < number_of_nodes; j++)
+		for(j = 0; j < lineCount; j++)
 		{
-			printf("%i ", matrix[i*number_of_nodes + j]);
+			printf("%i ", matrix[i*lineCount + j]);
 		}
 		printf("\n");
 	}
@@ -63,7 +60,7 @@ void release_matrix(int *matrix)
 
 //matrix -> input matrix created from pairs in file
 //boolean -> matrix generated with transitive closure algorithm
-int main(int argc, char *argv[])
+/*int main(int argc, char *argv[])
 {
 	//Added error checking, going to implement file directory check
 	if(argc != 2){fprintf(stderr, "Invalid Arguments.  Usage: functions <filename>\n"); exit(3);}
@@ -89,7 +86,7 @@ int main(int argc, char *argv[])
 	{
 		for(i = 0; i < number_of_nodes; ++i)
 		{
-			for(j = 0; j < number_of_nodes; ++j)
+			for(j = 0; j < numbero_f_nodes; ++j)
 			{
 				boolean[i*number_of_nodes+j] = (boolean[i*number_of_nodes+j] || (boolean[i*number_of_nodes+k] && boolean[k*number_of_nodes+j]));
 			}
@@ -104,4 +101,4 @@ int main(int argc, char *argv[])
 	release_matrix(boolean);
 
 	exit(0);
-}
+}*/
