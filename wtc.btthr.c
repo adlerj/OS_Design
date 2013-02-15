@@ -10,7 +10,7 @@
 int number_of_threads;
 int number_of_nodes;
 
-int *input_data = NULL;
+unsigned char *data_matrix = NULL;
 
 pthread_t *threads = NULL;
 pthread_mutex_t mutexmatrix;
@@ -27,37 +27,33 @@ int length;
 //Creates an n by n matrix in a one d matrix
 //n = number_of_nodes
 //matrix[n][m] = n*number_of_nodes + m
-int *create_matrix()
-{
-	int *matrix = (int *)malloc(sizeof(int)*number_of_nodes*number_of_nodes);
-	memset(matrix, 0, number_of_nodes*number_of_nodes);
-	return matrix;
-}
+
 
 //Reads input file
 //First entry -> number of threads
 //Second entry -> number of nodes
-int *read_file (char *filename)
+unsigned char *read_file (char *filename)
 {
 	FILE *file = fopen(filename, "r");
 	fscanf(file, "%d", &number_of_threads);
 	fscanf(file, "%d", &number_of_nodes);
 	
-	int *matrix = create_matrix();
+	unsigned char *matrix = bit_array_create(number_of_nodes*number_of_nodes);
 
 	int a = 0;
 	int b = 0;
 	while (!feof(file))
 	{
 		fscanf (file, "%d %d", &a, &b);
-		matrix[(a-1)*number_of_nodes + (b-1)] = 1;    
-    	}
+		bit_array_set(matrix, (a-1)*number_of_nodes + (b-1), 1);
+		printf("a: %i, b: %i\n", a, b);
+	}
 	fclose (file);
 	return matrix;        
 }
 
 //Prints input matrix
-void print_matrix(int *matrix)
+void print_matrix(unsigned char *matrix)
 {
 	int i;
 	int j;
@@ -65,7 +61,7 @@ void print_matrix(int *matrix)
 	{
 		for(j = 0; j < number_of_nodes; j++)
 		{
-			printf("%i ", matrix[i*number_of_nodes + j]);
+			printf("%i ", bit_array_get(matrix, i*number_of_nodes + j));
 		}
 		printf("\n");
 	}
@@ -90,8 +86,8 @@ void *transitive_closure(void *arg)
 			for(j = 0; j < number_of_nodes; ++j)
 			{
 				pthread_mutex_lock(&mutexmatrix);
-				result = input_data[i*number_of_nodes+j] || (input_data[i*number_of_nodes+k] && input_data[k*number_of_nodes+j]);
-				input_data[i*number_of_nodes+j] = result;
+				result = bit_array_get(data_matrix,i*number_of_nodes+j) || (bit_array_get(data_matrix, i*number_of_nodes+k) && bit_array_get(data_matrix, k*number_of_nodes+j));
+				bit_array_set(data_matrix, i*number_of_nodes+j, result);
 				pthread_mutex_unlock (&mutexmatrix);
 			}
 		}
@@ -112,9 +108,9 @@ int main(int argc, char *argv[])
 	int i;
 
 	//Pull data from file
-	input_data = read_file(argv[1]);
+	data_matrix = read_file(argv[1]);
 	printf("Initial matrix:\n");
-	print_matrix(input_data);
+	print_matrix(data_matrix);
 	
 	//set length of of operations
 	length = number_of_nodes/number_of_threads;
@@ -134,7 +130,7 @@ int main(int argc, char *argv[])
 	pthread_attr_t attr;
 	pthread_attr_init(&attr);
 	pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
-
+	int *queue = mal
 	//Create threads
 	for(i = 0; i < number_of_threads; ++i)
 	{
@@ -143,13 +139,26 @@ int main(int argc, char *argv[])
 
 	}
 
+	int j;
+
+
 	//Transitive closure algorithm
+	for(k = 1; k < number_of_threads; ++k)
+	{
+		for(i = 1; i < number_of_threads; ++i)
+		{
+			//enqueue here
+		}
+	}
+
+	/*
 	for(k; k < number_of_nodes;)
 	{
 		pthread_barrier_wait(&barrier);
 		++k;
 		pthread_barrier_wait(&kbarrier);
 	}
+	*/
 
 	//Join threads
 	for(i = 0; i < number_of_threads; ++i)
@@ -158,10 +167,9 @@ int main(int argc, char *argv[])
 	}
 
 	printf("Transitive Closure Matrix:\n");
-	print_matrix(input_data);
+	print_matrix(data_matrix);
 	
-	free(input_data);
-	//free(output_data);
+	free(data_matrix);
 	free(threads);	
 
 	pthread_attr_destroy(&attr);
@@ -169,5 +177,6 @@ int main(int argc, char *argv[])
 	pthread_mutex_destroy(&input_value);
 	pthread_barrier_destroy(&barrier);
 	pthread_barrier_destroy(&kbarrier);
+
 	pthread_exit(NULL);
 }
