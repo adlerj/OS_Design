@@ -46,7 +46,7 @@ unsigned char *read_file (char *filename)
 	{
 		fscanf (file, "%d %d", &a, &b);
 		bit_array_set(matrix, (a-1)*number_of_nodes + (b-1), 1);
-		printf("a: %i, b: %i\n", a, b);
+		//printf("a: %i, b: %i\n", a, b);
 	}
 	fclose (file);
 	return matrix;        
