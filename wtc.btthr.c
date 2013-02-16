@@ -57,7 +57,6 @@ unsigned char *read_file (char *filename)
 	{
 		fscanf (file, "%d %d", &a, &b);
 		bit_array_set(matrix, (a-1)*number_of_nodes + (b-1), 1);
-		printf("a: %i, b: %i\n", a, b);
 	}
 	fclose (file);
 
@@ -81,51 +80,36 @@ void print_matrix(unsigned char *matrix)
 
 void *transitive_closure(void *arg)
 {
-	//set parameters for operation
-	//int start = ((int)arg)*length;
-	//int end = start + length;
-	//pthread_mutex_unlock(&input_value);
-	//printf("myid: %ld; start: %i; end: %i\n", (long int)syscall(224), start, end);
-
-	//loop variables
+	//local variables
 	int kl;
 	int i;
 	int j;
 	int result;
+
 	while(k < number_of_nodes)
 	{
 		pthread_barrier_wait(&qbarrier);
 		while(root != NULL)
 		{
 			pthread_mutex_lock(&mutexqueue);
-			printf("here\n");
 			if(root != NULL)
 			{
-				printf("GETTING NODE\n");
-				printf("This is k: %i\n", root->k);
-				printf("This is i: %i\n", root->i);
 				kl = root->k;
 				i = root->i;
 				iter = root;
 				root = root->next;
-				printf("END GETTING NODE\n");
 				iter->next = NULL;
 				free(iter);
-				printf("FREED ITER\n");
 			}
-			printf("here2\n");
 			pthread_mutex_unlock(&mutexqueue);
 
 			for(j = 0; j < number_of_nodes; ++j)
 			{
 				pthread_mutex_lock(&mutexmatrix);
-				printf("I AM HERE\n");
 				result = bit_array_get(data_matrix, i*number_of_nodes+j) || (bit_array_get(data_matrix, i*number_of_nodes+kl) && bit_array_get(data_matrix, kl*number_of_nodes+j));
-				printf("I AM HERE 2\n");
 				bit_array_set(data_matrix, i*number_of_nodes+j, result);
 				pthread_mutex_unlock (&mutexmatrix);
 			}
-			printf("After done with j\n");
 		}
 		pthread_barrier_wait(&barrier);	
 		pthread_barrier_wait(&kbarrier);
@@ -172,13 +156,11 @@ int main(int argc, char *argv[])
 	{
 		pthread_create(&threads[i], &attr, transitive_closure, NULL);
 	}
-	printf("THREADS CREATED\n");
 	int j;
 	//Transitive closure algorithm
 	for(k = 0; k < number_of_nodes;)
 	{
 		pthread_mutex_lock(&mutexqueue);
-		printf("CREATING QUEUE\n");
 		for(i = 0; i < number_of_nodes; ++i)
 		{
 			if(root == NULL)
@@ -192,15 +174,14 @@ int main(int argc, char *argv[])
 			else
 			{
 				iter->next = (struct queue_node *) malloc(sizeof(* root));
-				iter->next->k = k;
-				iter->next->i = i;
-				iter->next->next = NULL;
 				iter = iter->next;
+				iter->k = k;
+				iter->i = i;
+				iter->next = NULL;
 			}
 		}
-		printf("DONE CREATING QUEUE\n");
-		pthread_barrier_wait(&qbarrier);
 		pthread_mutex_unlock(&mutexqueue);
+		pthread_barrier_wait(&qbarrier);
 		pthread_barrier_wait(&barrier);
 		++k;
 		pthread_barrier_wait(&kbarrier);
@@ -221,7 +202,7 @@ int main(int argc, char *argv[])
 		pthread_join(threads[i], &status);
 	}
 
-	printf("Transitive Closure Matrix:\n");
+	printf("\nTransitive Closure Matrix:\n");
 	print_matrix(data_matrix);
 	
 	free(data_matrix);
