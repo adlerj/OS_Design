@@ -187,15 +187,6 @@ int main(int argc, char *argv[])
 		pthread_barrier_wait(&kbarrier);
 	}
 
-	/*
-	for(k; k < number_of_nodes;)
-	{
-		pthread_barrier_wait(&barrier);
-		++k;
-		pthread_barrier_wait(&kbarrier);
-	}
-	*/
-
 	//Join threads
 	for(i = 0; i < number_of_threads; ++i)
 	{
