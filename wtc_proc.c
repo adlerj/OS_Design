@@ -140,8 +140,13 @@ int main(int argc, char ** argv){
 			kill(childPids[z], SIGKILL);//bye kids
 			printf("Killed child %i\n", z);
 		}
+		free(childPids);
+
 		matrix = (int *) mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, shm, 0);
 		print_matrix(matrix, lineCount);
+
+		munmap(matrix, size);
+		shm_unlink("/myshm");
 	}
 	return 0;
 }
