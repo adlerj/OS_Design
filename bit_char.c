@@ -6,7 +6,7 @@ unsigned bit_array_get(unsigned char *, unsigned);
 
 unsigned char *bit_array_create(unsigned size)
 {
-	unsigned char *array = (unsigned char *)malloc((size/(8*sizeof(unsigned char))));
+	unsigned char *array = (unsigned char *)calloc(((size/(8*sizeof(unsigned char))) + 1), 1);
 	return array;
 }
 
