@@ -30,12 +30,13 @@ int main(int argc, char ** argv){
 
 	fscanf(file, "%d", &threadCount);   
 	fscanf(file, "%d", &lineCount);   
-
+/////////////////////////////////////////////////////////////////////////////////
 	int shm = shm_open("/myshm", O_RDWR | O_CREAT, S_IRWXU);
-	int size = (sizeof(int) * lineCount * lineCount) + (sizeof(sem_t)*2);
+	int size = (sizeof(int) * lineCount * lineCount) + (sizeof(sem_t)*2) + sizeof(int);
 	ftruncate(shm, size);
-
-	int * matrix = (int *) mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, shm, 0);		int a;
+//////////////////////////////////////////////////////////////////////////////////
+	int * matrix = (int *) mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, shm, 0);		
+	int a;
 	int b;
 	while (!feof (file))
     {
@@ -44,13 +45,15 @@ int main(int argc, char ** argv){
 		printf ("%d %d\n", a, b);     
     }
 	fclose (file); 
-	printf("Hey papa\n");
 	////////////////////////////////////////////////////////////////////////////////////////////////////
-	sem_t * matrixLock = (sem_t *) matrix +(sizeof(int)*lineCount*lineCount);//first semaphore in shared mem
+	sem_t * matrixLock = (sem_t *) (matrix +(sizeof(int)*lineCount*lineCount));//first semaphore in shared mem
 	sem_init(matrixLock, 1, 1);
-	
-	sem_t * done = (sem_t *) matrix +(sizeof(int)*lineCount*lineCount) + sizeof(sem_t);//second semaphore in shared mem
-	sem_init(done, 1, (-1 * threadCount));
+
+	sem_t * cLock = (sem_t *) (matrix +(sizeof(int)*lineCount*lineCount) + sizeof(sem_t));//second semaphore in shared mem
+	sem_init(cLock, 1, 1);
+
+	int * count = (int *) (matrix +(sizeof(int)*lineCount*lineCount) + (2 * sizeof(sem_t)));
+	*count = threadCount;
 	//////////////////////////////////////////////////////////////////////////////////////////////////
 	printf("Number of processes: %i\nNumber of Lines: %i\n\n", threadCount, lineCount);
 
@@ -63,9 +66,11 @@ int main(int argc, char ** argv){
 	int x = 0;
 	
 	for(;(x < threadCount) && (pid != 0); x++){
-		if((pid=fork()) < 0){
+		/*if((pid=fork()) < 0){
+			printf("doodoo %i\n",pid);
 				err_exit();
-		}
+		}*/
+				pid= fork();
 		if(pid != 0){ //Parent keep track of child pids
 			childPids[x] = pid;
 		}
@@ -83,9 +88,10 @@ int main(int argc, char ** argv){
 ////////////////Prepared//Processes///////////////////////
 	
 	
-	matrixLock = (sem_t *) matrix +(sizeof(int)*lineCount*lineCount);//first semaphore in shared mem
-	done = (sem_t *) matrix +(sizeof(int)*lineCount*lineCount) + sizeof(sem_t);//second semaphore in shared mem
-	
+	matrixLock = (sem_t *) (matrix +(sizeof(int)*lineCount*lineCount));//first semaphore in shared mem
+	cLock = (sem_t *) (matrix +(sizeof(int)*lineCount*lineCount) + sizeof(sem_t));//second semaphore in shared mem
+	count = (int *) (matrix +(sizeof(int)*lineCount*lineCount) + (2 * sizeof(sem_t)));
+		
 
 	int rowsPer = lineCount/threadCount;
 
@@ -96,28 +102,46 @@ int main(int argc, char ** argv){
 			int y = (myId * rowsPer);
 			for(;y < ((myId+1) * rowsPer); y++){
 				sem_wait(matrixLock);
+				//printf("Child %i locked Matrix\n", myId);
 				matrix = (int *) mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, shm, 0);
 				int j = 0;
 				for(;j < lineCount; j++)
 				{
-					int yjIndex = y + (j * (lineCount-1));
-					int ykIndex = y + (k * (lineCount-1));
-					int kjIndex = k + (j * (lineCount-1));
-					matrix[yjIndex] = matrix[yjIndex] | matrix[ykIndex] & matrix[kjIndex];
+					int yjIndex = y + (j * (lineCount));
+					int ykIndex = y + (k * (lineCount));
+					int kjIndex = k + (j * (lineCount));
+					int sum = matrix[yjIndex] || (matrix[ykIndex] && matrix[kjIndex]);
+					matrix[yjIndex] = sum;
 				}
 				sem_post(matrixLock);
+				//printf("Child %i unlocked Matrix\n", myId);
 			}
 		}
-		sem_post(done);
+
+		int temp = 0;
+		printf("Child %i DONE!\n", myId);
+		
+		sem_wait(cLock);
+		(*count)--;
+		sem_post(cLock);
+		//sem_getvalue(done,&temp);
+		//printf("Done is at %i\n",temp);
 	}
 	else{//Parent
-		sem_wait(done);
+		int done = 0;
+		while(!done){
+			sem_wait(cLock);
+			if(*count == 0){done = 1;}
+			sem_post(cLock);
+		}
+		printf("All children finished!\n");
 		int z = 0;
 		for(;z < threadCount; z++){
 			kill(childPids[z], SIGKILL);//bye kids
+			printf("Killed child %i\n", z);
 		}
+		matrix = (int *) mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, shm, 0);
+		print_matrix(matrix, lineCount);
 	}
-	matrix = (int *) mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, shm, 0);
-	print_matrix(matrix, lineCount);
 	return 0;
 }
