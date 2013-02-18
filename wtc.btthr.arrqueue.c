@@ -89,7 +89,7 @@ void *transitive_closure_worker(void *arg)
 			for(j = 0; j < number_of_nodes; ++j)
 			{
 				pthread_mutex_lock(&mutexmatrix);
-				result |= (ik && bit_array_get(data_matrix, kl*number_of_nodes+j));
+				result = bit_array_get(data_matrix, i*number_of_nodes+j) || (ik && bit_array_get(data_matrix, kl*number_of_nodes+j));
 				bit_array_set(data_matrix, i*number_of_nodes+j, result);
 				pthread_mutex_unlock (&mutexmatrix);
 			}
