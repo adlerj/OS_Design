@@ -19,15 +19,8 @@ pthread_mutex_t input_value;
 pthread_barrier_t barrier;
 pthread_barrier_t kbarrier;
 
-
 int k = 0;
 int length;
-
-
-//Creates an n by n matrix in a one d matrix
-//n = number_of_nodes
-//matrix[n][m] = n*number_of_nodes + m
-
 
 //Reads input file
 //First entry -> number of threads
@@ -73,7 +66,6 @@ void *transitive_closure(void *arg)
 	int start = ((int)arg)*length;
 	int end = start + length;
 	pthread_mutex_unlock(&input_value);
-	printf("myid: %ld; start: %i; end: %i\n", (long int)syscall(224), start, end);
 
 	//loop variables
 	int i;
@@ -83,10 +75,11 @@ void *transitive_closure(void *arg)
 	{
 		for(i = start; i < end; ++i)
 		{	
+			int ik = bit_array_get(data_matrix, i*number_of_nodes+k);
 			for(j = 0; j < number_of_nodes; ++j)
 			{
 				pthread_mutex_lock(&mutexmatrix);
-				result = bit_array_get(data_matrix,i*number_of_nodes+j) || (bit_array_get(data_matrix, i*number_of_nodes+k) && bit_array_get(data_matrix, k*number_of_nodes+j));
+				result = bit_array_get(data_matrix,i*number_of_nodes+j) || (ik && bit_array_get(data_matrix, k*number_of_nodes+j));
 				bit_array_set(data_matrix, i*number_of_nodes+j, result);
 				pthread_mutex_unlock (&mutexmatrix);
 			}
@@ -95,7 +88,7 @@ void *transitive_closure(void *arg)
 		pthread_barrier_wait(&kbarrier);
 	}
 
-	pthread_exit(NULL);
+	return NULL;
 }
 
 //main: thread processing
@@ -126,16 +119,11 @@ int main(int argc, char *argv[])
 	pthread_barrier_init(&barrier, NULL, number_of_threads+1);
 	pthread_barrier_init(&kbarrier, NULL, number_of_threads+1);
 
-	//Set thread attribute and status
-	pthread_attr_t attr;
-	pthread_attr_init(&attr);
-	pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
-
 	//Create threads
 	for(i = 0; i < number_of_threads; ++i)
 	{
 		pthread_mutex_lock(&input_value);
-		pthread_create(&threads[i], &attr, transitive_closure, (void *)(i));
+		pthread_create(&threads[i], NULL, transitive_closure, (void *)(i));
 
 	}
 
@@ -150,7 +138,7 @@ int main(int argc, char *argv[])
 	//Join threads
 	for(i = 0; i < number_of_threads; ++i)
 	{
-		pthread_join(threads[i], &status);
+		pthread_join(threads[i], NULL);
 	}
 
 	printf("Transitive Closure Matrix:\n");
@@ -159,11 +147,10 @@ int main(int argc, char *argv[])
 	free(data_matrix);
 	free(threads);	
 
-	pthread_attr_destroy(&attr);
 	pthread_mutex_destroy(&mutexmatrix);
 	pthread_mutex_destroy(&input_value);
 	pthread_barrier_destroy(&barrier);
 	pthread_barrier_destroy(&kbarrier);
-
-	pthread_exit(NULL);
+	
+	return 0;
 }
