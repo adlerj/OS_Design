@@ -7,11 +7,11 @@ for file in *.txt; do
 	for ((c=1; c<=$count; c++)); do
 		./wtc_thr $file >> runtimes_wtc_thr.output
 	done
+done
 
 for file in *.txt; do
 	echo "WTC_BTTHR " $file >> runtimes_wtc_btthr.output
 	for ((c=1; c<=$count; c++)); do
 		./wtc_btthr $file >> runtimes_wtc_btthr.output
 	done
-done
 done
