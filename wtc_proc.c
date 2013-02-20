@@ -55,7 +55,6 @@ int main(int argc, char ** argv){
 	int semOffset = (sizeof(sem_t)/sizeof(int));
 	sem_t * matrixLock;
 	matrixLock = (sem_t *) (matrix + (lineCount*lineCount));
-	printf("Matrix: %p, Matrix Lock: %p, mSize: %i\n", matrix, matrixLock, ((sizeof(int)*lineCount*lineCount)));
 	sem_init(matrixLock, 1, 1);
 
 	sem_t * cLock = (sem_t *) (matrixLock + semOffset);
@@ -78,8 +77,8 @@ int main(int argc, char ** argv){
 	//////////////////////////////////////////////////////////////////////////////////////////////////
 	//printf("Number of processes: %i\nNumber of Lines: %i\n\n", threadCount, lineCount);
 
-	printf("\nInitial matrix:\n\n");
-	print_matrix(matrix, lineCount);
+	//printf("\nInitial matrix:\n\n");
+	////print_matrix(matrix, lineCount);
 	
 	int pid = 1;
 	int * childPids = malloc(sizeof(int)*threadCount);
@@ -186,15 +185,15 @@ int main(int argc, char ** argv){
 		free(childPids);
 
 		matrix = (int *) mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, shm, 0);
-		printf("\nOutput Matrix:\n");
-		print_matrix(matrix, lineCount);
+		//printf("\nOutput Matrix:\n");
+		//print_matrix(matrix, lineCount);
 
 		munmap(matrix, size);
 		shm_unlink("/myshm");
 
 		gettimeofday(&t1, 0);
 		long elapsed = (t1.tv_sec-t0.tv_sec)*1000000 + t1.tv_usec-t0.tv_usec;
-		printf("\nTime(microseconds): %lu\n", elapsed);
+		printf("%lu\n", elapsed);
 		//free(t0);free(t1);
 	}
 	return 0;
