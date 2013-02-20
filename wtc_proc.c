@@ -32,7 +32,7 @@ int main(int argc, char ** argv){
 	fscanf(file, "%d", &lineCount);   
 /////////////////////////////////////////////////////////////////////////////////
 	int shm = shm_open("/myshm", O_RDWR | O_CREAT, S_IRWXU);
-	int size = (sizeof(int) * lineCount * lineCount) + (sizeof(sem_t)*2) + sizeof(int);
+	int size = (sizeof(int) * lineCount * lineCount) + (sizeof(sem_t)*4) + (sizeof(int)*4);
 	ftruncate(shm, size);
 //////////////////////////////////////////////////////////////////////////////////
 	int * matrix = (int *) mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, shm, 0);		
@@ -54,6 +54,19 @@ int main(int argc, char ** argv){
 
 	int * count = (int *) (matrix +(sizeof(int)*lineCount*lineCount) + (2 * sizeof(sem_t)));
 	*count = threadCount;
+
+	sem_t * bLock = (sem_t *) (matrix +(sizeof(int)*lineCount*lineCount) + (2 * sizeof(sem_t)) + sizeof(int));
+	sem_init(bLock, 1, 1);
+
+	int * bCount = (int *) (matrix +(sizeof(int)*lineCount*lineCount) + (3 * sizeof(sem_t)) + sizeof(int));
+	*bCount = 0;
+
+	int * cont = (int *) (matrix +(sizeof(int)*lineCount*lineCount) + (3 * sizeof(sem_t)) + (2*sizeof(int)));
+	*cont = 0;
+
+	sem_t * contLock = (sem_t *) (matrix +(sizeof(int)*lineCount*lineCount) + (3 * sizeof(sem_t)) + (3*sizeof(int)));
+	sem_init(contLock, 1, 1);
+
 	//////////////////////////////////////////////////////////////////////////////////////////////////
 	printf("Number of processes: %i\nNumber of Lines: %i\n\n", threadCount, lineCount);
 
@@ -66,11 +79,10 @@ int main(int argc, char ** argv){
 	int x = 0;
 	
 	for(;(x < threadCount) && (pid != 0); x++){
-		/*if((pid=fork()) < 0){
+		if((pid=fork()) < 0){
 			printf("doodoo %i\n",pid);
-				err_exit();
-		}*/
-				pid= fork();
+			err_exit();
+		}
 		if(pid != 0){ //Parent keep track of child pids
 			childPids[x] = pid;
 		}
@@ -87,35 +99,45 @@ int main(int argc, char ** argv){
 	}
 ////////////////Prepared//Processes///////////////////////
 	
-	
+	matrix = (int *) mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, shm, 0);
 	matrixLock = (sem_t *) (matrix +(sizeof(int)*lineCount*lineCount));//first semaphore in shared mem
 	cLock = (sem_t *) (matrix +(sizeof(int)*lineCount*lineCount) + sizeof(sem_t));//second semaphore in shared mem
 	count = (int *) (matrix +(sizeof(int)*lineCount*lineCount) + (2 * sizeof(sem_t)));
-		
-
+	bLock = (sem_t *) (matrix +(sizeof(int)*lineCount*lineCount) + (2 * sizeof(sem_t)) + sizeof(int));
+	bCount = (int *) (matrix +(sizeof(int)*lineCount*lineCount) + (3 * sizeof(sem_t)) + sizeof(int));
+	cont = (int *) (matrix +(sizeof(int)*lineCount*lineCount) + (3 * sizeof(sem_t)) + (2*sizeof(int)));
+	contLock = (sem_t *) (matrix +(sizeof(int)*lineCount*lineCount) + (3 * sizeof(sem_t)) + (3*sizeof(int)));
+	
 	int rowsPer = lineCount/threadCount;
 
-	int k = 0;
-
 	if(myId > -1){//Children
+		int nextFlip = 1;
+		int k = 0;
 		for(;k < lineCount; k++){
 			int y = (myId * rowsPer);
 			for(;y < ((myId+1) * rowsPer); y++){
-				sem_wait(matrixLock);
-				//printf("Child %i locked Matrix\n", myId);
-				matrix = (int *) mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, shm, 0);
+				sem_wait(matrixLock);			
 				int j = 0;
-				for(;j < lineCount; j++)
-				{
-					int yjIndex = y + (j * (lineCount));
-					int ykIndex = y + (k * (lineCount));
-					int kjIndex = k + (j * (lineCount));
-					int sum = matrix[yjIndex] || (matrix[ykIndex] && matrix[kjIndex]);
-					matrix[yjIndex] = sum;
+				for(;j < lineCount; j++){
+					matrix[y + (j * (lineCount))] = matrix[y + (j * (lineCount))] || (matrix[y + (k * (lineCount))] && matrix[k + (j * (lineCount))]);
 				}
-				sem_post(matrixLock);
-				//printf("Child %i unlocked Matrix\n", myId);
+				sem_post(matrixLock);			
 			}
+			int temp = 0;
+			sem_wait(bLock);
+			(*bCount)++;
+			printf("[ID:%i|bCount %i]\n", myId, *bCount);
+			temp=*bCount;
+			sem_post(bLock);
+			int tCont = -1;
+			do{
+				//printf("Proc %i, waiting\n", myId);
+				sem_wait(contLock);
+				tCont = *cont;
+				//printf("Cont: %i\n", *cont);
+				sem_post(contLock);
+			}while(tCont!= nextFlip);
+			nextFlip = !nextFlip;
 		}
 
 		int temp = 0;
@@ -129,7 +151,18 @@ int main(int argc, char ** argv){
 	}
 	else{//Parent
 		int done = 0;
-		while(!done){
+		int nextFlip = 1;
+		while(!done){;
+			sem_wait(bLock);
+			//printf("bCount: %i\n", *bCount);
+			if((*bCount == threadCount)&&(*cont !=nextFlip)){
+				sem_wait(contLock);
+				nextFlip = *cont;
+				*cont = !(*cont);
+				sem_post(contLock);
+				*bCount = 0;
+			}	
+			sem_post(bLock);
 			sem_wait(cLock);
 			if(*count == 0){done = 1;}
 			sem_post(cLock);
