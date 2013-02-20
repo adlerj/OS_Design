@@ -16,7 +16,6 @@ wtc_proc: wtc_proc.c functions.c bit_char.c
 
 clean:
 	rm -rf *.o wtc_thr wtc_btthr wtc_proc
-	rm -rf *o functions wtc	
 
 memcheck: 
 	clear;make;valgrind --leak-check=yes ./wtc input1.in
