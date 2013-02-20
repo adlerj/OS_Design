@@ -1,28 +1,10 @@
-#include "functions.c"
-
-/*Global Variables*/
-int number_of_threads;
-int number_of_nodes;
-
-int *queue = NULL;
-int *queue_pos = NULL;
-
-unsigned char *data_matrix = NULL;
-
-pthread_t *threads = NULL;
-pthread_mutex_t mutexmatrix;
-pthread_mutex_t mutexqueue;
-
-pthread_barrier_t barrier;
-pthread_barrier_t kbarrier;
-
-int k = 0;
+#include "wtc_thr.c"
 
 /*Method headers*/
 void *transitive_closure_thread_worker(void *);
 
 /*main: thread processing with queue*/
-int main(int argc, char *argv[])
+int wtc_btthr(char *argv)
 {
 	struct timeval t0;
 	struct timeval t1;
@@ -34,19 +16,10 @@ int main(int argc, char *argv[])
 	/*Variable to hold time elapsed*/
 	long elapsed;
 
-	if(argc < 2)
-	{
-		err_exit("wtc_btthr");
-	}
-
 	gettimeofday(&t0, 0);
+
 	/*Pull data from file*/
-	data_matrix = read_file(argv[1], &number_of_threads, &number_of_nodes, "wtc_btthr");
-	
-	/*
-	printf("Initial matrix:\n");
-	print_matrix(data_matrix, number_of_nodes);
-	*/
+	data_matrix = read_file(argv, &number_of_threads, &number_of_nodes, "wtc_btthr");
 
 	/*Initialize thread vector*/
 	threads = (pthread_t *)malloc(sizeof(pthread_t)*number_of_threads);
@@ -94,13 +67,11 @@ int main(int argc, char *argv[])
 	}
 	gettimeofday(&t1, 0);
 	elapsed = (t1.tv_sec-t0.tv_sec)*1000000 + t1.tv_usec-t0.tv_usec;
-	printf("%lu\n", elapsed);
 	
-	/*
-	printf("\nTransitive Closure Matrix:\n");
+	
 	print_matrix(data_matrix, number_of_nodes);
-	*/
-	
+	printf("Time: %lu us\n", elapsed);
+
 	free(data_matrix);
 	free(threads);
 	free(queue);
