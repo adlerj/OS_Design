@@ -9,6 +9,7 @@
 #include <sys/types.h>
 #include <sys/ipc.h>
 #include <sys/shm.h>
+#include <sys/time.h>
 
 #include "functions2.h"
 
@@ -20,6 +21,11 @@ void err_exit()
 }
 
 int main(int argc, char ** argv){
+
+	struct timeval t0;
+	struct timeval t1;
+
+	gettimeofday(&t0, 0);
 	
 	if(argc != 2){fprintf(stderr, "Invalid Arguments.  Usage: functions <filename>\n"); exit(3);}
 
@@ -42,7 +48,7 @@ int main(int argc, char ** argv){
     {
 		fscanf (file, "%d %d", &a, &b);
 		matrix[((a-1)*lineCount) + (b-1)] = 1;
-		printf ("%d %d\n", a, b);     
+		//printf ("%d %d\n", a, b);     
     }
 	fclose (file); 
 	////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -68,7 +74,7 @@ int main(int argc, char ** argv){
 	sem_init(contLock, 1, 1);
 
 	//////////////////////////////////////////////////////////////////////////////////////////////////
-	printf("Number of processes: %i\nNumber of Lines: %i\n\n", threadCount, lineCount);
+	//printf("Number of processes: %i\nNumber of Lines: %i\n\n", threadCount, lineCount);
 
 	printf("\nInitial matrix:\n\n");
 	print_matrix(matrix, lineCount);
@@ -87,16 +93,16 @@ int main(int argc, char ** argv){
 			childPids[x] = pid;
 		}
 		else{ //child obtain identity
-			printf("Thread %i started!\n", x);
+			//printf("Thread %i started!\n", x);
 			myId = x;
 		}
 	}
 
 	int i = 0;
 	
-	if(pid!=0){
+	/*if(pid!=0){
 		for(;i < threadCount; i++){printf("My ID is: %i\n", childPids[i]);}
-	}
+	}*/
 ////////////////Prepared//Processes///////////////////////
 	
 	matrix = (int *) mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, shm, 0);
@@ -126,7 +132,7 @@ int main(int argc, char ** argv){
 			int temp = 0;
 			sem_wait(bLock);
 			(*bCount)++;
-			printf("[ID:%i|bCount %i]\n", myId, *bCount);
+			//printf("[ID:%i|bCount %i]\n", myId, *bCount);
 			temp=*bCount;
 			sem_post(bLock);
 			int tCont = -1;
@@ -141,7 +147,7 @@ int main(int argc, char ** argv){
 		}
 
 		int temp = 0;
-		printf("Child %i DONE!\n", myId);
+		//printf("Child %i DONE!\n", myId);
 		
 		sem_wait(cLock);
 		(*count)--;
@@ -167,19 +173,25 @@ int main(int argc, char ** argv){
 			if(*count == 0){done = 1;}
 			sem_post(cLock);
 		}
-		printf("All children finished!\n");
+		//printf("All children finished!\n");
 		int z = 0;
 		for(;z < threadCount; z++){
 			kill(childPids[z], SIGKILL);//bye kids
-			printf("Killed child %i\n", z);
+			//printf("Killed child %i\n", z);
 		}
 		free(childPids);
 
 		matrix = (int *) mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, shm, 0);
+		printf("\nOutput Matrix:\n");
 		print_matrix(matrix, lineCount);
 
 		munmap(matrix, size);
 		shm_unlink("/myshm");
+
+		gettimeofday(&t1, 0);
+		long elapsed = (t1.tv_sec-t0.tv_sec)*1000000 + t1.tv_usec-t0.tv_usec;
+		printf("\nTime(microseconds): %lu\n", elapsed);
+		//free(t0);free(t1);
 	}
 	return 0;
 }
