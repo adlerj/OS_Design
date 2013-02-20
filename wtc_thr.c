@@ -15,8 +15,6 @@ int wtc_thr(char* argv)
 	/*Variable to hold time elapsed*/
 	long elapsed;
 
-	gettimeofday(&t0, 0);
-
 	/*Pull data from file*/
 	data_matrix = read_file(argv, &number_of_threads, &number_of_nodes, "wtc_thr");
 	
@@ -34,6 +32,7 @@ int wtc_thr(char* argv)
 	pthread_barrier_init(&barrier, NULL, number_of_threads+1);
 	pthread_barrier_init(&kbarrier, NULL, number_of_threads+1);
 
+	gettimeofday(&t0, 0);
 	/*Create threads*/
 	for(i = 0; i < number_of_threads; ++i)
 	{
