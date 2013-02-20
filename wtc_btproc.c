@@ -144,20 +144,17 @@ int main(int argc, char ** argv){
 		int nextFlip = 1;
 		int k = 0;
 		for(;k < lineCount; k++){
-			//int y = (myId * rowsPer);
-			//for(;y < ((myId+1) * rowsPer); y++){
 			int y = 0;;
 			sem_wait(queueLock);			
 			y = queue[*qNum];
 			if(y!=-1){
 				(*qNum)++;
 			}
-			//printf("(%i)Child %i handling line %i.\n", k, myId, y);
 			sem_post(queueLock);
 
 			while(y!= -1)
 			{
-				//printf("Child %i working on line %i of iteration %i\n", myId, y, k);
+				printf("Child %i working on line %i of iteration %i\n", myId, y, k);
 				sem_wait(matrixLock);			
 				int j = 0;
 				for(;j < lineCount; j++){
@@ -165,13 +162,10 @@ int main(int argc, char ** argv){
 				}
 				sem_post(matrixLock);	
 
-				//printf("[K:%i|Y:%i]\n", k, y);
-
 				//pull from queue
 				sem_wait(queueLock);
 				y = queue[*qNum];
 				if(y!=-1){(*qNum)++;}
-				//printf("(%i)Child %i handling line %i.\n", k, myId, y);
 
 				sem_post(queueLock);
 			}
@@ -204,7 +198,7 @@ int main(int argc, char ** argv){
 				*qNum = 0;				
 				sem_post(queueLock);
 
-				//printf("Reset Queue\n");
+				printf("Parent resetting Queue\n");
 				sem_wait(contLock);
 				nextFlip = *cont;
 				*cont = !(*cont);
