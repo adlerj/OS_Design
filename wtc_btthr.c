@@ -1,11 +1,4 @@
-#include <sys/types.h>
-#include <sys/ipc.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <pthread.h>
-#include <string.h>
-#include <sys/time.h>
-#include "bit_char.c"
+#include "functions.c"
 
 //Global Variables
 int number_of_threads;
@@ -25,95 +18,24 @@ pthread_barrier_t kbarrier;
 
 int k = 0;
 
-//Reads input file
-//First entry -> number of threads
-//Second entry -> number of nodes
-unsigned char *read_file (char *filename)
-{
-	FILE *file = fopen(filename, "r");
-	fscanf(file, "%d", &number_of_threads)
-;	fscanf(file, "%d", &number_of_nodes);
-	
-	unsigned char *matrix = bit_array_create(number_of_nodes*number_of_nodes);
+//Method headers
+void *transitive_closure_thread_worker(void *);
 
-	int a = 0;
-	int b = 0;
-	while (!feof(file))
-	{
-		fscanf (file, "%d %d", &a, &b);
-		bit_array_set(matrix, (a-1)*number_of_nodes + (b-1), 1);
-	}
-	fclose (file);
-
-	return matrix;        
-}
-
-//Prints input matrix
-void print_matrix(unsigned char *matrix)
-{
-	int i;
-	int j;
-	for(i = 0; i < number_of_nodes; i++)
-	{
-		for(j = 0; j < number_of_nodes; j++)
-		{
-			printf("%i ", bit_array_get(matrix, i*number_of_nodes + j));
-		}
-		printf("\n");
-	}
-}
-
-void *transitive_closure_worker(void *arg)
-{
-	//local variables
-	int kl;
-	int i;
-	int j;
-	int result;
-
-	while(k < number_of_nodes)
-	{
-		pthread_barrier_wait(&kbarrier);
-
-		while(*queue_pos != -1)
-		{
-			pthread_mutex_lock(&mutexqueue);
-			if(*queue_pos != -1)
-			{
-				kl = *(queue_pos);
-				i = *(queue_pos+1);
-				queue_pos += 2;
-			}
-			pthread_mutex_unlock(&mutexqueue);
-
-			unsigned ik = bit_array_get(data_matrix, i*number_of_nodes+kl);
-			for(j = 0; j < number_of_nodes; ++j)
-			{
-				pthread_mutex_lock(&mutexmatrix);
-				result = bit_array_get(data_matrix, i*number_of_nodes+j) || (ik && bit_array_get(data_matrix, kl*number_of_nodes+j));
-				bit_array_set(data_matrix, i*number_of_nodes+j, result);
-				pthread_mutex_unlock (&mutexmatrix);
-			}
-		}
-		pthread_barrier_wait(&barrier);	
-		pthread_barrier_wait(&kbarrier);
-	}
-	return NULL;
-}
-
-//main: thread processing
+//main: thread processing with queue
 int main(int argc, char *argv[])
 {
 	struct timeval t0;
 	struct timeval t1;
 	gettimeofday(&t0, 0);
+
 	//Create variable for loops
 	int i;
 
 	//Pull data from file
-	data_matrix = read_file(argv[1]);
+	data_matrix = read_file(argv[1], &number_of_threads, &number_of_nodes, "wtc_btthr");
+	
 	//printf("Initial matrix:\n");
-	//print_matrix(data_matrix);
+	//print_matrix(data_matrix, number_of_nodes);
 	
 	//Initialize thread vector
 	threads = (pthread_t *)malloc(sizeof(pthread_t)*number_of_threads);
@@ -127,12 +49,12 @@ int main(int argc, char *argv[])
 	pthread_barrier_init(&kbarrier, NULL, number_of_threads+1);
 
 	//initialize queue
-	queue = (int *)malloc(sizeof(int)*(number_of_nodes*2 + 1));
+	queue = (int *)malloc(sizeof(int)*(number_of_nodes + 1));
 
 	//Create threads
 	for(i = 0; i < number_of_threads; ++i)
 	{
-		pthread_create(&threads[i], NULL, transitive_closure_worker, NULL);
+		pthread_create(&threads[i], NULL, transitive_closure_thread_worker, NULL);
 	}
 
 	//Transitive closure algorithm
@@ -143,9 +65,8 @@ int main(int argc, char *argv[])
 		count = 0;
 		for(i = 0; i < number_of_nodes; ++i)
 		{
-			queue[count] = k;
-			queue[count+1] = i;
-			count += 2;
+			queue[count] = i;
+			++count;
 		}
 		queue[count] = -1;
 		queue_pos = queue;
@@ -164,18 +85,57 @@ int main(int argc, char *argv[])
 	gettimeofday(&t1, 0);
 	long elapsed = (t1.tv_sec-t0.tv_sec)*1000000 + t1.tv_usec-t0.tv_usec;
 	printf("%lu\n", elapsed);
+	
 	//printf("\nTransitive Closure Matrix:\n");
-	//print_matrix(data_matrix);
+	//print_matrix(data_matrix, number_of_nodes);
 	
 	free(data_matrix);
 	free(threads);
 	free(queue);
 
-	//pthread_attr_destroy(&attr);
 	pthread_mutex_destroy(&mutexmatrix);
 	pthread_mutex_destroy(&mutexqueue);
 	pthread_barrier_destroy(&barrier);
 	pthread_barrier_destroy(&kbarrier);
 	
 	return 0;
+}
+
+void *transitive_closure_thread_worker(void *arg)
+{
+	//local variables
+	int i;
+	int j;
+	int result;
+
+	while(k < number_of_nodes)
+	{
+		pthread_barrier_wait(&kbarrier);
+
+		while(*queue_pos != -1)
+		{
+			pthread_mutex_lock(&mutexqueue);
+			if(*queue_pos != -1)
+			{
+				i = *queue_pos;
+				queue_pos++;
+			}
+			pthread_mutex_unlock(&mutexqueue);
+
+			unsigned ik = bit_array_get(data_matrix, i*number_of_nodes+k);
+			for(j = 0; j < number_of_nodes; ++j)
+			{
+				pthread_mutex_lock(&mutexmatrix);
+				result = (ik && bit_array_get(data_matrix, k*number_of_nodes+j));
+				if(result == 1)
+				{
+					bit_array_set(data_matrix, i*number_of_nodes+j);
+				}
+				pthread_mutex_unlock (&mutexmatrix);
+			}
+		}
+		pthread_barrier_wait(&barrier);	
+		pthread_barrier_wait(&kbarrier);
+	}
+	return NULL;
 }
