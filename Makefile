@@ -1,15 +1,15 @@
-CC=gcc
+CC=gcc -Wall -pedantic
 
-all: wtc
+all: wtc_thr wtc_btthr wtc_proc
 
-wtc: wtc_proc.o functions2.o
-	$(CC) wtc_proc.o functions2.o -o wtc
+wtc_thr: wtc_thr.c functions.c bit_char.c
+	$(CC) wtc_thr.c -o wtc_thr -lpthread
 
-wtc_proc.o: wtc_proc.c
-	$(CC) -c wtc_proc.c
+wtc_btthr: wtc_btthr.c functions.c bit_char.c
+	$(CC) wtc_btthr.c -o wtc_btthr -lpthread
 
-functions2.o: functions2.c
-	$(CC) -c functions2.c
+wtc_proc: wtc_proc.c functions.c bit_char.c
+	$(CC) wtc_proc.c -o wtc_proc -lrt
 
 clean:
-	rm -rf *o functions wtc	
+	rm -rf *.o wtc_thr wtc_btthr wtc_proc
