@@ -5,6 +5,7 @@
 #include <pthread.h>
 #include <string.h>
 #include <sys/time.h>
+#include <stdint.h>
 #include "bit_char.c"
 
 unsigned char *read_file (char *, int *, int *, char *);
@@ -21,6 +22,10 @@ unsigned char *read_file (char *filename, int *number_of_threads, int *number_of
 	int b;
 
 	FILE *file = fopen(filename, "r");
+	if(file == NULL)
+	{
+		err_exit(program);
+	}
 	fscanf(file, "%d", number_of_threads);	
 	fscanf(file, "%d", number_of_nodes);
 	

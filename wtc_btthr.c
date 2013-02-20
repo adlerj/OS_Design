@@ -34,6 +34,11 @@ int main(int argc, char *argv[])
 	/*Variable to hold time elapsed*/
 	long elapsed;
 
+	if(argc < 2)
+	{
+		err_exit("wtc_btthr");
+	}
+
 	gettimeofday(&t0, 0);
 	/*Pull data from file*/
 	data_matrix = read_file(argv[1], &number_of_threads, &number_of_nodes, "wtc_btthr");

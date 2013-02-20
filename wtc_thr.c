@@ -26,10 +26,15 @@ int main(int argc, char *argv[])
 	struct timeval t1;
 
 	/*Create variable for loops*/
-	int i;
+	intptr_t i;
 
 	/*Variable to hold time elapsed*/
 	long elapsed;
+
+	if(argc < 2)
+	{
+		err_exit("wtc_thr");
+	}
 
 	gettimeofday(&t0, 0);
 	/*Pull data from file*/
@@ -101,7 +106,7 @@ void *transitive_closure_thread(void *arg)
 	int result;
 	
 	/*set parameters for operation*/
-	int start = ((int)arg)*length;
+	intptr_t start = ((intptr_t)arg)*length;
 	int end = start + length;
 	pthread_mutex_unlock(&input_value);
 
