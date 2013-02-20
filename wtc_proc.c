@@ -11,7 +11,14 @@
 #include <sys/shm.h>
 #include <sys/time.h>
 
-#include "functions.c"
+#include "functions2.h"
+
+
+void err_exit()
+{
+	perror("wtc");
+	exit(1);
+}
 
 int main(int argc, char ** argv){
 
@@ -31,49 +38,48 @@ int main(int argc, char ** argv){
 	fscanf(file, "%d", &lineCount);   
 /////////////////////////////////////////////////////////////////////////////////
 	int shm = shm_open("/myshm", O_RDWR | O_CREAT, S_IRWXU);
-	int mSize = (sizeof(int) * lineCount * lineCount/8) + 1;
-	int size = (mSize + (sizeof(sem_t)*4) + (sizeof(int)*4));
+	int size = (sizeof(int) * lineCount * lineCount) + (sizeof(sem_t)*4) + (sizeof(int)*4);
 	ftruncate(shm, size);
 //////////////////////////////////////////////////////////////////////////////////
-	unsigned char * matrix = (unsigned char *) mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, shm, 0);		
+	int * matrix = (int *) mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, shm, 0);		
 	int a;
 	int b;
 	while (!feof (file))
     {
 		fscanf (file, "%d %d", &a, &b);
-		bit_array_set(matrix, (a-1)* lineCount + (b-1));
+		matrix[((a-1)*lineCount) + (b-1)] = 1;
 		//printf ("%d %d\n", a, b);     
     }
 	fclose (file); 
 	////////////////////////////////////////////////////////////////////////////////////////////////////
-	sem_t * matrixLock = (sem_t *) (matrix +mSize);//first semaphore in shared mem
+	int semOffset = (sizeof(sem_t)/sizeof(int));
+	sem_t * matrixLock;
+	matrixLock = (sem_t *) (matrix + (lineCount*lineCount));
+	printf("Matrix: %p, Matrix Lock: %p, mSize: %i\n", matrix, matrixLock, ((sizeof(int)*lineCount*lineCount)));
 	sem_init(matrixLock, 1, 1);
 
-	sem_t * cLock = (sem_t *) (matrix + mSize + sizeof(sem_t));//second semaphore in shared mem
+	sem_t * cLock = (sem_t *) (matrixLock + semOffset);
 	sem_init(cLock, 1, 1);
 
-	int * count = (int *) (matrix + mSize + (2 * sizeof(sem_t)));
+	int * count = (int *) (cLock + semOffset);
 	*count = threadCount;
 
-	sem_t * bLock = (sem_t *) (matrix + mSize + (2 * sizeof(sem_t)) + sizeof(int));
+	sem_t * bLock = (sem_t *) (count + 1);
 	sem_init(bLock, 1, 1);
 
-	int * bCount = (int *) (matrix + mSize + (3 * sizeof(sem_t)) + sizeof(int));
+	int * bCount = (int *) (bLock + semOffset);
 	*bCount = 0;
 
-	int * cont = (int *) (matrix + mSize + (3 * sizeof(sem_t)) + (2*sizeof(int)));
+	int * cont = (int *) (bCount + 1);
 	*cont = 0;
 
-	sem_t * contLock = (sem_t *) (matrix + mSize + (3 * sizeof(sem_t)) + (3*sizeof(int)));
+	sem_t * contLock = (sem_t *) (cont + 1);
 	sem_init(contLock, 1, 1);
-
 	//////////////////////////////////////////////////////////////////////////////////////////////////
 	//printf("Number of processes: %i\nNumber of Lines: %i\n\n", threadCount, lineCount);
 
-	/*
 	printf("\nInitial matrix:\n\n");
 	print_matrix(matrix, lineCount);
-	*/
 	
 	int pid = 1;
 	int * childPids = malloc(sizeof(int)*threadCount);
@@ -83,7 +89,7 @@ int main(int argc, char ** argv){
 	for(;(x < threadCount) && (pid != 0); x++){
 		if((pid=fork()) < 0){
 			printf("doodoo %i\n",pid);
-			err_exit("wtc");
+			err_exit();
 		}
 		if(pid != 0){ //Parent keep track of child pids
 			childPids[x] = pid;
@@ -93,21 +99,25 @@ int main(int argc, char ** argv){
 			myId = x;
 		}
 	}
+
+	int i = 0;
 	
 	/*if(pid!=0){
 		for(;i < threadCount; i++){printf("My ID is: %i\n", childPids[i]);}
 	}*/
 ////////////////Prepared//Processes///////////////////////
 	
-	matrix = (unsigned char *) mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, shm, 0);
-	matrixLock = (sem_t *) (matrix + mSize);//first semaphore in shared mem
-	cLock = (sem_t *) (matrix + mSize + sizeof(sem_t));//second semaphore in shared mem
-	count = (int *) (matrix + mSize + (2 * sizeof(sem_t)));
-	bLock = (sem_t *) (matrix + mSize + (2 * sizeof(sem_t)) + sizeof(int));
-	bCount = (int *) (matrix + mSize + (3 * sizeof(sem_t)) + sizeof(int));
-	cont = (int *) (matrix + mSize + (3 * sizeof(sem_t)) + (2*sizeof(int)));
-	contLock = (sem_t *) (matrix + mSize + (3 * sizeof(sem_t)) + (3*sizeof(int)));
+	matrix = (int *) mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, shm, 0);
+	matrixLock = (sem_t *) (matrix + (lineCount*lineCount));
 	
+	cLock = (sem_t *) (matrixLock + semOffset);
+	count = (int *) (cLock + semOffset);
+	
+	bLock = (sem_t *) (count + 1);
+	bCount = (int *) (bLock + semOffset);
+
+	cont = (int *) (bCount + 1);
+////////////////////////////////////////////////////////
 	int rowsPer = lineCount/threadCount;
 
 	if(myId > -1){//Children
@@ -118,13 +128,8 @@ int main(int argc, char ** argv){
 			for(;y < ((myId+1) * rowsPer); y++){
 				sem_wait(matrixLock);			
 				int j = 0;
-				int ik = bit_array_get(matrix, y*lineCount+k);
 				for(;j < lineCount; j++){
-					int result = (ik && bit_array_get(matrix, k*lineCount+j));
-					if(result == 1)
-					{
-						bit_array_set(matrix, y*lineCount+j);
-					}
+					matrix[y + (j * (lineCount))] = matrix[y + (j * (lineCount))] || (matrix[y + (k * (lineCount))] && matrix[k + (j * (lineCount))]);
 				}
 				sem_post(matrixLock);			
 			}
@@ -181,18 +186,15 @@ int main(int argc, char ** argv){
 		free(childPids);
 
 		matrix = (int *) mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, shm, 0);
-		
-		/*
 		printf("\nOutput Matrix:\n");
 		print_matrix(matrix, lineCount);
-		*/
 
 		munmap(matrix, size);
 		shm_unlink("/myshm");
 
 		gettimeofday(&t1, 0);
 		long elapsed = (t1.tv_sec-t0.tv_sec)*1000000 + t1.tv_usec-t0.tv_usec;
-		printf("%lu\n", elapsed);
+		printf("\nTime(microseconds): %lu\n", elapsed);
 		//free(t0);free(t1);
 	}
 	return 0;
