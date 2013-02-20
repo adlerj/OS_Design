@@ -11,19 +11,23 @@ unsigned char *read_file (char *, int *, int *, char *);
 void print_matrix(unsigned char *, int);
 void err_exit(char *);
 
-//Reads input file
-//First entry -> number of threads
-//Second entry -> number of nodes
+/*Reads input file
+First entry -> number of threads
+Second entry -> number of nodes*/
 unsigned char *read_file (char *filename, int *number_of_threads, int *number_of_nodes, char *program)
 {
+	unsigned char *matrix; 
+	int a; 
+	int b;
+
 	FILE *file = fopen(filename, "r");
 	fscanf(file, "%d", number_of_threads);	
 	fscanf(file, "%d", number_of_nodes);
 	
-	unsigned char *matrix = bit_array_create(*number_of_nodes * *number_of_nodes);
+	matrix = bit_array_create(*number_of_nodes * *number_of_nodes);
 
-	int a = 0;
-	int b = 0;
+	a = 0;
+	b = 0;
 	while (!feof(file))
 	{
 		fscanf (file, "%d %d", &a, &b);
@@ -38,7 +42,7 @@ unsigned char *read_file (char *filename, int *number_of_threads, int *number_of
 	return matrix;        
 }
 
-//Prints bitpacked matrix
+/*Prints bitpacked matrix*/
 void print_matrix(unsigned char *matrix, int number_of_nodes)
 {
 	int i;
@@ -53,7 +57,7 @@ void print_matrix(unsigned char *matrix, int number_of_nodes)
 	}
 }
 
-//Prints an error
+/*Prints an error*/
 void err_exit(char *name)
 {
 	perror(name);

@@ -1,6 +1,6 @@
 #include "functions.c"
 
-//Global Variables
+/*Global Variables*/
 int number_of_threads;
 int number_of_nodes;
 
@@ -16,65 +16,73 @@ pthread_barrier_t kbarrier;
 int k = 0;
 int length;
 
-//Method headers
+/*Method headers*/
 void *transitive_closure_thread(void *);
 
-//main: thread processing without queue
+/*main: thread processing without queue*/
 int main(int argc, char *argv[])
 {
 	struct timeval t0;
 	struct timeval t1;
 
-	//Create variable for loops
+	/*Create variable for loops*/
 	int i;
 
-	//Pull data from file
+	/*Variable to hold time elapsed*/
+	long elapsed;
+
+	gettimeofday(&t0, 0);
+	/*Pull data from file*/
 	data_matrix = read_file(argv[1], &number_of_threads, &number_of_nodes, "wtc_thr");
 
-	//printf("Initial matrix:\n");
-	//print_matrix(data_matrix, number_of_nodes);
+	/*
+	printf("Initial matrix:\n");
+	print_matrix(data_matrix, number_of_nodes);
+	*/
 	
-	//set length of of operations
+	/*set length of of operations*/
 	length = number_of_nodes/number_of_threads;
 
-	//Initialize thread vector
+	/*Initialize thread vector*/
 	threads = (pthread_t *)malloc(sizeof(pthread_t)*number_of_threads);
 
-	//Initialize mutex
+	/*Initialize mutex*/
 	pthread_mutex_init(&mutexmatrix, NULL);
 	pthread_mutex_init(&input_value, NULL);
 	
-	//Initialize barrier
+	/*Initialize barrier*/
 	pthread_barrier_init(&barrier, NULL, number_of_threads+1);
 	pthread_barrier_init(&kbarrier, NULL, number_of_threads+1);
 
-	//Create threads
+	/*Create threads*/
 	for(i = 0; i < number_of_threads; ++i)
 	{
 		pthread_mutex_lock(&input_value);
 		pthread_create(&threads[i], NULL, transitive_closure_thread, (void *)(i));
 	}
 
-	//Transitive closure algorithm
-	for(k; k < number_of_nodes;)
+	/*Transitive closure algorithm*/
+	while(k < number_of_nodes)
 	{
 		pthread_barrier_wait(&barrier);
 		++k;
 		pthread_barrier_wait(&kbarrier);
 	}
 
-	//Join threads
+	/*Join threads*/
 	for(i = 0; i < number_of_threads; ++i)
 	{
 		pthread_join(threads[i], NULL);
 	}
 	gettimeofday(&t1, 0);
-	long elapsed = (t1.tv_sec-t0.tv_sec)*1000000 + t1.tv_usec-t0.tv_usec;
+	elapsed = (t1.tv_sec-t0.tv_sec)*1000000 + t1.tv_usec-t0.tv_usec;
 	printf("%lu\n", elapsed);
 
-	//printf("Transitive Closure Matrix:\n");
-	//print_matrix(data_matrix, number_of_nodes);
-	
+	/*
+	printf("Transitive Closure Matrix:\n");
+	print_matrix(data_matrix, number_of_nodes);
+	*/
+
 	free(data_matrix);
 	free(threads);
 
@@ -88,15 +96,15 @@ int main(int argc, char *argv[])
 
 void *transitive_closure_thread(void *arg)
 {
-	//set parameters for operation
+	int i;
+	int j;
+	int result;
+	
+	/*set parameters for operation*/
 	int start = ((int)arg)*length;
 	int end = start + length;
 	pthread_mutex_unlock(&input_value);
 
-	//loop variables
-	int i;
-	int j;
-	int result;
 	while (k < number_of_nodes)
 	{
 		for(i = start; i < end; ++i)
