@@ -10,8 +10,7 @@
 #include <sys/ipc.h>
 #include <sys/shm.h>
 #include <sys/time.h>
-
-#include "functions2.h"
+#include <pthread.h>
 
 
 void err_exit()
@@ -38,7 +37,7 @@ int main(int argc, char ** argv){
 	fscanf(file, "%d", &lineCount);   
 /////////////////////////////////////////////////////////////////////////////////
 	int shm = shm_open("/myshm", O_RDWR | O_CREAT, S_IRWXU);
-	int size = (sizeof(int) * lineCount * lineCount) + (sizeof(sem_t)*4) + (sizeof(int)*4);
+	int size = (sizeof(int) * lineCount * lineCount) + (sizeof(sem_t)) + sizeof(pthread_barrier_t);
 	ftruncate(shm, size);
 //////////////////////////////////////////////////////////////////////////////////
 	int * matrix = (int *) mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, shm, 0);		
@@ -53,27 +52,19 @@ int main(int argc, char ** argv){
 	fclose (file); 
 	////////////////////////////////////////////////////////////////////////////////////////////////////
 	int semOffset = (sizeof(sem_t)/sizeof(int));
+	int barrierOffset = (sizeof(pthread_barrier_t)/sizeof(int));
+
 	sem_t * matrixLock;
 	matrixLock = (sem_t *) (matrix + (lineCount*lineCount));
 	sem_init(matrixLock, 1, 1);
 
-	sem_t * cLock = (sem_t *) (matrixLock + semOffset);
-	sem_init(cLock, 1, 1);
+	pthread_barrierattr_t attr; 
+	int ret; 
+	ret = pthread_barrierattr_init(&attr);
+	pthread_barrierattr_setpshared(&attr, PTHREAD_PROCESS_SHARED);
 
-	int * count = (int *) (cLock + semOffset);
-	*count = threadCount;
-
-	sem_t * bLock = (sem_t *) (count + 1);
-	sem_init(bLock, 1, 1);
-
-	int * bCount = (int *) (bLock + semOffset);
-	*bCount = 0;
-
-	int * cont = (int *) (bCount + 1);
-	*cont = 0;
-
-	sem_t * contLock = (sem_t *) (cont + 1);
-	sem_init(contLock, 1, 1);
+	pthread_barrier_t * barrier1 = (pthread_barrier_t *) (matrixLock + semOffset);
+	pthread_barrier_init(barrier1, &attr, threadCount+1);
 	//////////////////////////////////////////////////////////////////////////////////////////////////
 	//printf("Number of processes: %i\nNumber of Lines: %i\n\n", threadCount, lineCount);
 
@@ -109,13 +100,7 @@ int main(int argc, char ** argv){
 	matrix = (int *) mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, shm, 0);
 	matrixLock = (sem_t *) (matrix + (lineCount*lineCount));
 	
-	cLock = (sem_t *) (matrixLock + semOffset);
-	count = (int *) (cLock + semOffset);
-	
-	bLock = (sem_t *) (count + 1);
-	bCount = (int *) (bLock + semOffset);
-
-	cont = (int *) (bCount + 1);
+	barrier1 = (pthread_barrier_t *) (matrixLock + semOffset);
 ////////////////////////////////////////////////////////
 	int rowsPer = lineCount/threadCount;
 
@@ -132,61 +117,26 @@ int main(int argc, char ** argv){
 				}
 				sem_post(matrixLock);			
 			}
-			int temp = 0;
-			sem_wait(bLock);
-			(*bCount)++;
-			//printf("[ID:%i|bCount %i]\n", myId, *bCount);
-			temp=*bCount;
-			sem_post(bLock);
-			int tCont = -1;
-			do{
-				//printf("Proc %i, waiting\n", myId);
-				sem_wait(contLock);
-				tCont = *cont;
-				//printf("Cont: %i\n", *cont);
-				sem_post(contLock);
-			}while(tCont!= nextFlip);
-			nextFlip = !nextFlip;
+			pthread_barrier_wait(barrier1);
 		}
-
-		int temp = 0;
-		//printf("Child %i DONE!\n", myId);
-		
-		sem_wait(cLock);
-		(*count)--;
-		sem_post(cLock);
-		//sem_getvalue(done,&temp);
-		//printf("Done is at %i\n",temp);
 	}
 	else{//Parent
 		int done = 0;
 		int nextFlip = 1;
-		while(!done){;
-			sem_wait(bLock);
-			//printf("bCount: %i\n", *bCount);
-			if((*bCount == threadCount)&&(*cont !=nextFlip)){
-				sem_wait(contLock);
-				nextFlip = *cont;
-				*cont = !(*cont);
-				sem_post(contLock);
-				*bCount = 0;
-			}	
-			sem_post(bLock);
-			sem_wait(cLock);
-			if(*count == 0){done = 1;}
-			sem_post(cLock);
+		int k = 0;
+		for(;k < lineCount; k++){
+			pthread_barrier_wait(barrier1);
 		}
-		//printf("All children finished!\n");
+		
 		int z = 0;
 		for(;z < threadCount; z++){
 			kill(childPids[z], SIGKILL);//bye kids
-			//printf("Killed child %i\n", z);
 		}
 		free(childPids);
 
 		matrix = (int *) mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, shm, 0);
-		//printf("\nOutput Matrix:\n");
-		//print_matrix(matrix, lineCount);
+		printf("\nOutput Matrix:\n");
+		print_matrix(matrix, lineCount);
 
 		munmap(matrix, size);
 		shm_unlink("/myshm");
