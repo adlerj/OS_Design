@@ -12,9 +12,6 @@
 #include <sys/time.h>
 #include <pthread.h>
 
-#include "functions2.h"
-
-
 void err_exit()
 {
 	perror("wtc");
@@ -71,24 +68,6 @@ void initShm(int shm, int lineCount, int threadCount, FILE * file, int size){
 	sem_t * matrixLock;
 	matrixLock = (sem_t *) (matrix + (lineCount*lineCount));
 	sem_init(matrixLock, 1, 1);
-
-	/*sem_t * cLock = (sem_t *) (matrixLock + semOffset);
-	sem_init(cLock, 1, 1);
-
-	int * count = (int *) (cLock + semOffset);
-	*count = threadCount;
-
-	sem_t * bLock = (sem_t *) (count + 1);
-	sem_init(bLock, 1, 1);
-
-	int * bCount = (int *) (bLock + semOffset);
-	*bCount = 0;
-
-	int * cont = (int *) (bCount + 1);
-	*cont = 0;
-
-	sem_t * contLock = (sem_t *) (cont + 1);
-	sem_init(contLock, 1, 1);*/
 
 	int * queue = (int *) (matrixLock + semOffset);
 	setQueue(queue, lineCount);	
