@@ -195,7 +195,9 @@ int main(int argc, char ** argv){
 		int k = 0;
 		for(;k < lineCount; k++){
 			pthread_barrier_wait(barrier1);
+			sem_wait(queueLock);
 			(*qNum)=0;
+			sem_post(queueLock);
 			pthread_barrier_wait(barrier2);
 		}
 		int z = 0;
