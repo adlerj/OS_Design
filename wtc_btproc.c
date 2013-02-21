@@ -74,11 +74,11 @@ void initShm(int shm, int lineCount, int threadCount, FILE * file, int size){
 
 	sem_t * queueLock = (sem_t *) (queue + (lineCount+1));
 	sem_init(queueLock, 1, 1);	
-	printf("Before\n");
+
 	int * qNum = (int *) (queueLock + 1);
 
 	*qNum = 0;
-printf("after\n");
+
 	pthread_barrierattr_t attr; 
 	int ret; 
 	ret = pthread_barrierattr_init(&attr);
