@@ -69,15 +69,16 @@ void initShm(int shm, int lineCount, int threadCount, FILE * file, int size){
 	matrixLock = (sem_t *) (matrix + (lineCount*lineCount));
 	sem_init(matrixLock, 1, 1);
 
-	int * queue = (int *) (matrixLock + semOffset);
+	int * queue = (int *) (matrixLock + 1);
 	setQueue(queue, lineCount);	
 
 	sem_t * queueLock = (sem_t *) (queue + (lineCount+1));
 	sem_init(queueLock, 1, 1);	
+	printf("Before\n");
+	int * qNum = (int *) (queueLock + 1);
 
-	int * qNum = (int *) (queueLock + semOffset);
 	*qNum = 0;
-
+printf("after\n");
 	pthread_barrierattr_t attr; 
 	int ret; 
 	ret = pthread_barrierattr_init(&attr);
@@ -86,7 +87,7 @@ void initShm(int shm, int lineCount, int threadCount, FILE * file, int size){
 	pthread_barrier_t * barrier1 = (pthread_barrier_t *) (qNum + 1);
 	pthread_barrier_init(barrier1, &attr, threadCount+1);
 
-	pthread_barrier_t * barrier2 = (pthread_barrier_t *) (barrier1 + barrierOffset);
+	pthread_barrier_t * barrier2 = (pthread_barrier_t *) (barrier1 + 1);
 	pthread_barrier_init(barrier2, &attr, threadCount+1);
 }
 
@@ -119,7 +120,6 @@ int queuePop(sem_t * queueLock, int * queue, int * qNum){
 }
 
 int main(int argc, char ** argv){
-
 	struct timeval t0;
 	struct timeval t1;
 
@@ -135,7 +135,6 @@ int main(int argc, char ** argv){
 	
 	int size = (sizeof(int) * lineCount * lineCount) + (sizeof(sem_t)*2) + (sizeof(int)*(2 + lineCount));
 	size = size + (2*sizeof(pthread_barrier_t));
-
 	shm = allocShm(lineCount, file, size);
 	initShm(shm, lineCount, threadCount, file, size);
 
@@ -162,7 +161,6 @@ int main(int argc, char ** argv){
 			myId = x;
 		}
 	}
-
 	int semOffset = (sizeof(sem_t)/sizeof(int));
 	int barrierOffset = (sizeof(pthread_barrier_t)/sizeof(int));
 
@@ -170,12 +168,12 @@ int main(int argc, char ** argv){
 	sem_t * matrixLock = (sem_t *) (matrix + (lineCount*lineCount));
 	
 
-	int * queue = (int *) (matrixLock + semOffset);
+	int * queue = (int *) (matrixLock + 1);
 	sem_t * queueLock = (sem_t *) (queue + (lineCount+1));
-	int * qNum = (int *) (queueLock + semOffset);
+	int * qNum = (int *) (queueLock + 1);
 
 	pthread_barrier_t * barrier1 = (pthread_barrier_t *) (qNum + 1);
-	pthread_barrier_t * barrier2 = (pthread_barrier_t *) (barrier1 + barrierOffset);
+	pthread_barrier_t * barrier2 = (pthread_barrier_t *) (barrier1 + 1);
 
 
 	if(myId > -1){//Children
@@ -184,7 +182,6 @@ int main(int argc, char ** argv){
 		for(;k < lineCount; k++){
 			int y;
 			childCompute(matrix, matrixLock, k, queueLock, queue, qNum, lineCount);
-			
 			pthread_barrier_wait(barrier1);
 			pthread_barrier_wait(barrier2);
 		}
