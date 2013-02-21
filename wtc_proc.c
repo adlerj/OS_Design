@@ -75,7 +75,7 @@ int main(int argc, char ** argv){
 	int pid = 1;
 	int * childPids;
 	childPids = malloc(sizeof(int)*threadCount);
-	if(childPids* == NULL){err_exit();}
+	if(*childPids == NULL){err_exit();}
 	
 	int myId = -1; //parentID is -1
 	int x = 0;
