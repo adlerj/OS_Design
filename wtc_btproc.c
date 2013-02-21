@@ -10,6 +10,7 @@
 #include <sys/ipc.h>
 #include <sys/shm.h>
 #include <sys/time.h>
+#include <pthread.h>
 
 #include "functions2.h"
 
@@ -62,6 +63,7 @@ int allocShm(int lineCount, FILE * file, int size){
 
 void initShm(int shm, int lineCount, int threadCount, FILE * file, int size){
 	int semOffset = (sizeof(sem_t)/sizeof(int));
+	int barrierOffset = (sizeof(pthread_barrier_t)/sizeof(int));
 
 	int * matrix = (int *) mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, shm, 0);		
 	readMatrix(file, matrix, lineCount);
@@ -70,7 +72,7 @@ void initShm(int shm, int lineCount, int threadCount, FILE * file, int size){
 	matrixLock = (sem_t *) (matrix + (lineCount*lineCount));
 	sem_init(matrixLock, 1, 1);
 
-	sem_t * cLock = (sem_t *) (matrixLock + semOffset);
+	/*sem_t * cLock = (sem_t *) (matrixLock + semOffset);
 	sem_init(cLock, 1, 1);
 
 	int * count = (int *) (cLock + semOffset);
@@ -86,9 +88,9 @@ void initShm(int shm, int lineCount, int threadCount, FILE * file, int size){
 	*cont = 0;
 
 	sem_t * contLock = (sem_t *) (cont + 1);
-	sem_init(contLock, 1, 1);
+	sem_init(contLock, 1, 1);*/
 
-	int * queue = (int *) (contLock + semOffset);
+	int * queue = (int *) (matrixLock + semOffset);
 	setQueue(queue, lineCount);	
 
 	sem_t * queueLock = (sem_t *) (queue + (lineCount+1));
@@ -96,6 +98,17 @@ void initShm(int shm, int lineCount, int threadCount, FILE * file, int size){
 
 	int * qNum = (int *) (queueLock + semOffset);
 	*qNum = 0;
+
+	pthread_barrierattr_t attr; 
+	int ret; 
+	ret = pthread_barrierattr_init(&attr);
+	pthread_barrierattr_setpshared(&attr, PTHREAD_PROCESS_SHARED);
+
+	pthread_barrier_t * barrier1 = (pthread_barrier_t *) (qNum + 1);
+	pthread_barrier_init(barrier1, &attr, threadCount+1);
+
+	pthread_barrier_t * barrier2 = (pthread_barrier_t *) (barrier1 + barrierOffset);
+	pthread_barrier_init(barrier2, &attr, threadCount+1);
 }
 
 void childCompute(int * matrix, sem_t * matrixLock, int k, sem_t * queueLock, int * queue, int * qNum, int lineCount){
@@ -141,15 +154,17 @@ int main(int argc, char ** argv){
 	FILE * file = openMatrix(argv[1], &threadCount, &lineCount);
 	int shm;
 	
-	int size = (sizeof(int) * lineCount * lineCount) + (sizeof(sem_t)*5) + (sizeof(int)*(4 + 1 + lineCount));
+	int size = (sizeof(int) * lineCount * lineCount) + (sizeof(sem_t)*2) + (sizeof(int)*(2 + lineCount));
+	size = size + (2*sizeof(pthread_barrier_t));
+
 	shm = allocShm(lineCount, file, size);
 	initShm(shm, lineCount, threadCount, file, size);
 
 	int * matrix = (int *) mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, shm, 0);		
 	
-	//printf("\nInitial matrix:\n\n");
-	//print_matrix(matrix, lineCount);
-	//printf("\n");
+	/*printf("\nInitial matrix:\n\n");
+	print_matrix(matrix, lineCount);
+	printf("\n");*/
 	
 	int pid = 1;
 	int * childPids = malloc(sizeof(int)*threadCount);
@@ -170,22 +185,18 @@ int main(int argc, char ** argv){
 	}
 
 	int semOffset = (sizeof(sem_t)/sizeof(int));
+	int barrierOffset = (sizeof(pthread_barrier_t)/sizeof(int));
 
 	matrix = (int *) mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, shm, 0);
 	sem_t * matrixLock = (sem_t *) (matrix + (lineCount*lineCount));
 	
-	sem_t * cLock = (sem_t *) (matrixLock + semOffset);
-	int * count = (int *) (cLock + semOffset);
-	
-	sem_t * bLock = (sem_t *) (count + 1);
-	int * bCount = (int *) (bLock + semOffset);
 
-	int * cont = (int *) (bCount + 1);
-	sem_t * contLock = (sem_t *) (cont + 1);
-
-	int * queue = (int *) (contLock + semOffset);
+	int * queue = (int *) (matrixLock + semOffset);
 	sem_t * queueLock = (sem_t *) (queue + (lineCount+1));
 	int * qNum = (int *) (queueLock + semOffset);
+
+	pthread_barrier_t * barrier1 = (pthread_barrier_t *) (qNum + 1);
+	pthread_barrier_t * barrier2 = (pthread_barrier_t *) (barrier1 + barrierOffset);
 
 
 	if(myId > -1){//Children
@@ -194,56 +205,30 @@ int main(int argc, char ** argv){
 		for(;k < lineCount; k++){
 			int y;
 			childCompute(matrix, matrixLock, k, queueLock, queue, qNum, lineCount);
-			sem_wait(bLock);
-			(*bCount)++;
-			sem_post(bLock);
-			int tCont = -1;
-			do{
-				sem_wait(contLock);
-				tCont = *cont;
-				sem_post(contLock);
-			}while(tCont!= nextFlip);
-			nextFlip = !nextFlip;
+			
+			pthread_barrier_wait(barrier1);
+			pthread_barrier_wait(barrier2);
 		}
-		
-		sem_wait(cLock);
-		(*count)--;
-		sem_post(cLock);
 	}
 	else{//Parent
 		int done = 0;
 		int nextFlip = 1;
-		while(!done){;
-			sem_wait(bLock);
-			//printf("bCount: %i\n", *bCount);
-			if((*bCount == threadCount)&&(*cont !=nextFlip)){
-				sem_wait(queueLock);
-				*qNum = 0;				
-				sem_post(queueLock);
-
-				//printf("Reset Queue\n");
-				sem_wait(contLock);
-				nextFlip = *cont;
-				*cont = !(*cont);
-				sem_post(contLock);
-				*bCount = 0;
-			}	
-			sem_post(bLock);
-			sem_wait(cLock);
-			if(*count == 0){done = 1;}
-			sem_post(cLock);
+		int k = 0;
+		for(;k < lineCount; k++){
+			pthread_barrier_wait(barrier1);
+			(*qNum)=0;
+			pthread_barrier_wait(barrier2);
 		}
-		//printf("All children finished!\n");
 		int z = 0;
+		/*kill children*/
 		for(;z < threadCount; z++){
-			kill(childPids[z], SIGKILL);//bye kids
-			//printf("Killed child %i\n", z);
+			kill(childPids[z], SIGKILL);
 		}
 		free(childPids);
 
 		matrix = (int *) mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, shm, 0);
-		//printf("\nOutput Matrix:\n");
-		//print_matrix(matrix, lineCount);
+		/*printf("\nOutput Matrix:\n");
+		print_matrix(matrix, lineCount);*/
 
 		munmap(matrix, size);
 		shm_unlink("/myshm");
