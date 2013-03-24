@@ -37,8 +37,6 @@ extern void timer_bh(void);
 extern void tqueue_bh(void);
 extern void immediate_bh(void);
 
-static int printcount = 0;
-
 /*
  * scheduler variables
  */
@@ -546,121 +544,119 @@ asmlinkage void schedule_tail(struct task_struct *prev)
  * tasks can run. It can not be killed, and it cannot sleep. The 'state'
  * information in task[0] is never used.
  */
-
-
 asmlinkage void schedule(void)
 {
 	struct schedule_data * sched_data;
 	struct task_struct *prev, *next, *p;
-	struct list_head *tmp, *tmp2;
+	struct list_head *tmp;
 	int this_cpu, c;
 
-	struct task_struct *run_task = NULL;
-	struct user_struct *tmpuser;
-	int count = 0;
 
-choose_task:
-	//root user
-	tmpuser = list_entry(&root_user.userlist, struct user_struct, userlist);
-	if(tmpuser->hasRun > 0)
-	{
-		count++;
-		list_for_each(tmp2, &tmpuser->procs)
-		{
-			p = list_entry(tmp2, struct task_struct, procs);
-			if(p->hasRun > 0)
-			{
-				run_task = p;
-				p->hasRun--;
-				break;
-			}
-		}
-		tmpuser->hasRun--;
-	}
+	spin_lock_prefetch(&runqueue_lock);
 
-	//all other users
-	if(run_task != NULL)
-	{
-		list_for_each(tmp, &root_user.userlist)
-		{
-			tmpuser = list_entry(tmp, struct user_struct, userlist);
-			if(tmpuser->hasRun > 0)
-			{
-				count++;
-				list_for_each(tmp2, &tmpuser->procs)
-				{
-					p = list_entry(tmp2, struct task_struct, procs);
-					if(p->hasRun > 0)
-					{
-						run_task = p;
-						break;
-					}
-				}
-				tmpuser->hasRun--;
-			}
-			if(run_task != NULL)
-			{
-				break;
-			}
-		}
-	}
-
-	//reset all of the user counters
-	if(count == 0)
-	{
-		tmpuser = list_entry(&root_user.userlist, struct user_struct, userlist);
-		tmpuser->hasRun = 1;
-		list_for_each(tmp, &root_user.userlist)
-		{
-			tmpuser = list_entry(tmp, struct user_struct, userlist);
-			tmpuser->hasRun = 1;
-		}
-		goto choose_task;
-	}
-
-	//reset all counters
-	if(run_task == NULL)
-	{
-		tmpuser = list_entry(&root_user.userlist, struct user_struct, userlist);
-		tmpuser->hasRun = 1;
-		list_for_each(tmp2, &tmpuser->procs)
-		{
-			p = list_entry(tmp2, struct task_struct, procs);
-			if(p->super == 1)
-			{
-				p->hasRun = 2;
-			}
-			else
-			{
-				p->hasRun = 1;
-			}
-		}
-
-		list_for_each(tmp, &root_user.userlist)
-		{
-			tmpuser = list_entry(tmp, struct user_struct, userlist);
-			tmpuser->hasRun = 1;
-			list_for_each(tmp2, &tmpuser->procs)
-			{
-				p = list_entry(tmp2, struct task_struct, procs);
-				if(p->super == 1)
-				{
-					p->hasRun = 2;
-				}
-				else
-				{
-					p->hasRun = 1;
-				}
-			}
-		}
-		goto choose_task;
-	}
-
+	BUG_ON(!current->active_mm);
+need_resched_back:
 	prev = current;
 	this_cpu = prev->processor;
-	next = run_task;
 
+	if (unlikely(in_interrupt())) {
+		printk("Scheduling in interrupt\n");
+		BUG();
+	}
+
+	release_kernel_lock(prev, this_cpu);
+
+	/*
+	 * 'sched_data' is protected by the fact that we can run
+	 * only one process per CPU.
+	 */
+	sched_data = & aligned_data[this_cpu].schedule_data;
+
+	spin_lock_irq(&runqueue_lock);
+
+	/* move an exhausted RR process to be last.. */
+	if (unlikely(prev->policy == SCHED_RR))
+		if (!prev->counter) {
+			prev->counter = NICE_TO_TICKS(prev->nice);
+			move_last_runqueue(prev);
+		}
+
+	switch (prev->state) {
+		case TASK_INTERRUPTIBLE:
+			if (signal_pending(prev)) {
+				prev->state = TASK_RUNNING;
+				break;
+			}
+		default:
+			del_from_runqueue(prev);
+		case TASK_RUNNING:;
+	}
+	prev->need_resched = 0;
+
+	/*
+	 * this is the scheduler proper:
+	 */
+
+repeat_schedule:
+	/*
+	 * Default process to select..
+	 */
+	next = idle_task(this_cpu);
+	c = -1000;
+	list_for_each(tmp, &runqueue_head) {
+		p = list_entry(tmp, struct task_struct, run_list);
+		if (can_schedule(p, this_cpu)) {
+			int weight = goodness(p, this_cpu, prev->active_mm);
+			if (weight > c)
+				c = weight, next = p;
+		}
+	}
+
+	/* Do we need to re-calculate counters? */
+	if (unlikely(!c)) {
+		struct task_struct *p;
+
+		spin_unlock_irq(&runqueue_lock);
+		read_lock(&tasklist_lock);
+		for_each_task(p)
+			p->counter = (p->counter >> 1) + NICE_TO_TICKS(p->nice);
+		read_unlock(&tasklist_lock);
+		spin_lock_irq(&runqueue_lock);
+		goto repeat_schedule;
+	}
+
+	/*
+	 * from this point on nothing can prevent us from
+	 * switching to the next task, save this fact in
+	 * sched_data.
+	 */
+	sched_data->curr = next;
 	task_set_cpu(next, this_cpu);
+	spin_unlock_irq(&runqueue_lock);
+
+	if (unlikely(prev == next)) {
+		/* We won't go through the normal tail, so do this by hand */
+		prev->policy &= ~SCHED_YIELD;
+		goto same_process;
+	}
+
+#ifdef CONFIG_SMP
+ 	/*
+ 	 * maintain the per-process 'last schedule' value.
+ 	 * (this has to be recalculated even if we reschedule to
+ 	 * the same process) Currently this is only used on SMP,
+	 * and it's approximate, so we do not have to maintain
+	 * it while holding the runqueue spinlock.
+ 	 */
+ 	sched_data->last_schedule = get_cycles();
+
+	/*
+	 * We drop the scheduler lock early (it's a global spinlock),
+	 * thus we have to lock the previous process from getting
+	 * rescheduled during switch_to().
+	 */
+
+#endif /* CONFIG_SMP */
 
 	kstat.context_swtch++;
 	/*
@@ -697,6 +693,13 @@ choose_task:
 	 * stack.
 	 */
 	switch_to(prev, next, prev);
+	__schedule_tail(prev);
+
+same_process:
+	reacquire_kernel_lock(current);
+	if (current->need_resched)
+		goto need_resched_back;
+	return;
 }
 
 /*
