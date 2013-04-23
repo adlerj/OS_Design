@@ -1,3 +1,18 @@
+/*OPCODES
+0 -> create
+1 -> open
+2 -> close
+3 -> truncate
+4 -> getattr
+
+5-> read
+6 -> write
+7 -> opendir
+8 -> readdir
+9 -> releasedir
+10 -> mkdir
+*/
+
 #define FUSE_USE_VERSION 26
 
 #include <fuse.h>
@@ -32,6 +47,8 @@ int open_listenfd(int port);
 void *handle_request(void *arg);
 void server_getatrr(char *buffer, int clientfd);
 void server_open(char *buffer, int clientfd);
+void server_truncate(char *buffer, int clientfd);
+void server_read(char *buffer, int clientfd);
 
 //Global variables
 pthread_attr_t attr;
@@ -96,18 +113,22 @@ void * handle_request(void *arg)
     switch(op)
     {
         case 1:
-            printf("OPEN\n")
+            printf("OPEN\n");
             server_open(recv_data, connfd);
             break;
         case 2:
             break;
         case 3:
+            printf("TRUNCATE\n");
+            server_truncate(recv_data, connfd);
             break;
         case 4:
             printf("GET_ATTR\n");
             server_getatrr(recv_data, connfd);
             break;
         case 5:
+            printf("READ\n");
+            server_read(recv_data, connfd);
             break;
         case 6:
             break;
@@ -133,17 +154,17 @@ void server_getatrr(char *buffer, int clientfd)
     uint16_t response;
     bzero(path_temp, sizeof(path_temp));
     bzero(send_request, sizeof(send_request));
+
     memcpy(path_temp, mount, strlen(mount));
-    printf("Buffer: %s\n", &buffer[2]);
     memcpy(&path_temp[strlen(mount)], &buffer[2], strlen(&buffer[2]));
-    printf("Path_Temp %s:%i\n", path_temp, strlen(path_temp));
-    int n;
     path = malloc(strlen(path_temp)*sizeof(char));
     memcpy(path, path_temp, strlen(path_temp));
+
     printf("Path: %s\n", path);
+
+    int n;
     if((n = stat(path, &fileStat)) < 0)
     {
-        printf("NOPE %i\n", n);
         perror("server");
         response = 0;
         response = htons(response);
@@ -177,15 +198,13 @@ void server_open(char *buffer, int clientfd)
 
     memcpy(path_temp, mount, strlen(mount));
     memcpy(&path_temp[strlen(mount)], &buffer[2+sizeof(int)], strlen(&buffer[2+sizeof(int)]));
-    printf("Path_Temp %s:%i\n", path_temp, strlen(path_temp));
-    
     path = malloc(strlen(path_temp)*sizeof(char));
     memcpy(path, path_temp, strlen(path_temp));
+
     printf("Path: %s\n", path);
     
-    if((n = stat(path, &fileStat)) < 0)
+    if((n = open(path, O_RDONLY)) < 0)
     {
-        printf("NOPE %i\n", n);
         perror("server");
         response = 0;
         response = htons(response);
@@ -196,12 +215,97 @@ void server_open(char *buffer, int clientfd)
         response = 1;
         response = htons(response);
         memcpy(send_request, &response, 2);
-        memcpy(&send_request[2], &fileStat, sizeof(struct stat));
+        close(n);
     }
 
-    send(clientfd, send_request, sizeof(struct stat) + 2, 0);
+    send(clientfd, send_request, 2, 0);
 }
 
+void server_truncate(char *buffer, int clientfd)
+{
+    char path_temp[1024];
+    char *path;
+    char send_request[1024];
+    int16_t response;
+    off_t size;
+    int n;
+
+    bzero(path_temp, sizeof(path_temp));
+    bzero(send_request, sizeof(send_request));
+    
+    memcpy(&size, &buffer[2], sizeof(off_t));
+
+    memcpy(path_temp, mount, strlen(mount));
+    memcpy(&path_temp[strlen(mount)], &buffer[2+sizeof(off_t)], strlen(&buffer[2+sizeof(off_t)]));
+    path = malloc(strlen(path_temp)*sizeof(char));
+    memcpy(path, path_temp, strlen(path_temp));
+
+    printf("Path: %s\n", path);
+
+    response = truncate(path, size);
+    response = htons(response);
+
+    memcpy(send_request, &response, sizeof(int16_t));
+    send(clientfd, send_request, 2, 0);
+}
+
+void server_read(char *buffer, int clientfd)
+{
+    char path_temp[1024];
+    char *path;
+    char send_request[1024];
+    uint16_t done;
+    uint16_t response;
+    size_t size;
+    off_t offset;
+    ssize_t n;
+
+    bzero(path_temp, sizeof(path_temp));
+    bzero(send_request, sizeof(send_request));
+    
+    memcpy(&size, &buffer[2], sizeof(size_t));
+    memcpy(&offset, &buffer[2+sizeof(size_t)], sizeof(off_t));
+    
+    memcpy(path_temp, mount, strlen(mount));
+    printf("Buffer: %s\n", &buffer[2+sizeof(size_t)+sizeof(off_t)]);
+    send_request[2+sizeof(size_t)+sizeof(off_t)]
+    memcpy(&path_temp[strlen(mount)], &buffer[2+sizeof(size_t)+sizeof(off_t)], strlen(&buffer[2+sizeof(size_t)+sizeof(off_t)]));
+    path = malloc(strlen(path_temp)*sizeof(char));
+    memcpy(path, path_temp, strlen(path_temp));
+
+    printf("Path: %s\n", path);
+
+    int file = open(path ,O_RDONLY);
+    printf("BEFORE READ\n");
+    n = pread(file, &send_request[sizeof(ssize_t)], size, offset);
+    printf("N: %i", n);
+    n = htons(n);
+   
+    memcpy(&send_request, &n, sizeof(ssize_t));
+    close(file);
+    send(clientfd, send_request, sizeof(ssize_t)+n, 0);
+
+    /*
+    while((n = pread(file, &send_request[2+sizeof(ssize_t)], 1002-sizeof(ssize_t), offset)) > 0)
+    {
+        if(n < (1000-sizeof(ssize_t)))
+        {
+            done = 1;
+        }
+        else
+        {
+            done = 0;
+        }
+        memcpy(send_request, &done, 2);
+        memcpy(&send_request[2], &n, sizeof(ssize_t));
+        send(clientfd, send_request, 2+sizeof(ssize_t)+n, 0);
+        bzero(send_request, sizeof(send_request));
+        offset+=n;
+    }
+    */
+}
+
+//Open Listening Socket
 int open_listenfd(int port) 
 {
     int listenfd, optval=1;

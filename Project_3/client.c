@@ -37,6 +37,7 @@
 #include <netdb.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <error.h>
 
 static const char *hello_str = "Hello World!\n";
 static const char *hello_path = "/hello";
@@ -159,17 +160,14 @@ static int client_open(const char *path, struct fuse_file_info *fi)
     
     int clientfd = open_clientfd();
 
-    send(clientfd, send_request, strlen(path)+2, 0); 
-    recv(clientfd, recv_data, 4, 0);
+    send(clientfd, send_request, strlen(path)+2+sizeof(int), 0); 
+    recv(clientfd, recv_data, 2, 0);
 
     uint16_t result;
-    int access;
 
     memcpy(&result, recv_data, 2);
-    memcpy(&access, &recv_data[2], 2);
 
     result = ntohs(result);
-    access = ntohs(access);
 
     if(result == 0)
     {
@@ -177,28 +175,92 @@ static int client_open(const char *path, struct fuse_file_info *fi)
     }
     else if(result == 1)
     {
-        if((access & 3) != O_RDONLY)
+        if((fi->flags & 3) != O_RDONLY)
         {
-            res = -EACCESS;
+            res = -EACCES;
         }
     }
 
     free(send_request);
     free(recv_data);
 
-    /*
-    if(strcmp(path, hello_path) != 0)
-        return -ENOENT;
-
-    if((fi->flags & 3) != O_RDONLY)
-        return -EACCES;
-    */
     return res;
 }
 
 static int client_read(const char *path, char *buf, size_t size, off_t offset,
                       struct fuse_file_info *fi)
 {
+
+    uint16_t op = 5;
+    op = htons(op);
+
+    int res = 0;
+    char *send_request = calloc(1024, sizeof(char));
+    char *recv_data = calloc(1024, sizeof(char));
+    bzero(send_request, (sizeof(send_request)));
+    
+    printf("PATH: %s\n", path);
+    memcpy(send_request, &op, 2);
+    memcpy(&send_request[2], &size, sizeof(size_t));
+    memcpy(&send_request[2+sizeof(size_t)], &offset, sizeof(off_t));
+    sprintf(&send_request[2+sizeof(size_t)+sizeof(off_t)], "%s", path);
+    printf("Send_request: %s\n", &send_request[2+sizeof(size_t)+sizeof(off_t)]);
+    //memcpy(&send_request[2+sizeof(size_t)+sizeof(off_t)], path, strlen(path));
+
+    int clientfd = open_clientfd();
+    send(clientfd, send_request, strlen(path)+2+sizeof(int), 0);
+    recv(clientfd, recv_data, 1024, 0);
+
+    ssize_t rsize;
+    memcpy(&rsize, &recv_data, sizeof(ssize_t));
+    rsize = ntohs(rsize);
+    printf("rsize: %i\n", rsize);
+    memcpy(buf, &recv_data[sizeof(ssize_t)], rsize);
+
+
+    //free(send_request);
+    //free(recv_data);
+
+
+    //recv(clientfd, recv_data, 2, 0);
+    /*
+    uint16_t done = 0; 
+    ssize_t rsize;
+    char *temp = buf;
+
+    printf("HERE\n"); 
+    while(!done)
+    {
+        printf("%i\n", done);
+        
+        memcpy(&done, recv_data, 2);
+        memcpy(&rsize, &recv_data[2], 2);
+        memcpy(temp, &recv_data[4], rsize);
+        temp += rsize;
+    
+    
+    }    printf("HERE?\n");
+
+    uint16_t result;
+
+    memcpy(&result, recv_data, 2);
+
+    result = ntohs(result);
+
+    if(result == 0)
+    {
+        res = -ENOENT;
+    }
+    else if(result == 1)
+    {
+        if((fi->flags & 3) != O_RDONLY)
+        {
+            res = -EACCES;
+        }
+    }
+*/
+    
+    /*
     size_t len;
     (void) fi;
     if(strcmp(path, hello_path) != 0)
@@ -211,15 +273,54 @@ static int client_read(const char *path, char *buf, size_t size, off_t offset,
         memcpy(buf, hello_str + offset, size);
     } else
         size = 0;
-
+    */
     return size;
 }
+
+static int client_truncate(const char *path, off_t size)
+{
+    uint16_t op = 3;
+    op = htons(op);
+    int res = 0;
+
+    char *send_request = calloc(1024, sizeof(char));
+    char *recv_data = calloc(2, sizeof(char));
+
+    printf("PATH: %s\n", path);
+    
+    memcpy(send_request, &op, 2);
+    memcpy(&send_request[2], &size, sizeof(off_t));
+    memcpy(&send_request[2+sizeof(off_t)], path, strlen(path));
+    
+    int clientfd = open_clientfd();
+
+    send(clientfd, send_request, strlen(path)+2+sizeof(int), 0); 
+
+    recv(clientfd, recv_data, 2, 0);
+
+    uint16_t result;
+    memcpy(&result, recv_data, sizeof(off_t));
+    result = ntohs(result);
+
+    if(result == -1)
+    {
+        res = -ENOENT;
+    }
+
+    free(send_request);
+    free(recv_data);
+
+    return res;
+}
+
 
 static struct fuse_operations client_oper = {
     .getattr    = client_getattr,
     .readdir    = client_readdir,
     .open   = client_open,
     .read   = client_read,
+    .truncate = client_truncate,
+    //.close = client_close,
 };
 
 int main(int argc, char *argv[])
