@@ -79,8 +79,8 @@ static int client_getattr(const char *path, struct stat *stbuf)
     uint16_t op = 4;
     op = htons(op);
     int res = 0;
-    char *send_request = calloc(1024, sizeof(char));
-    char *recv_data = calloc(sizeof(struct stat) + 2, sizeof(char));
+    char *send_request = (char *)calloc(1024, sizeof(char));
+    char *recv_data = (char *)calloc(sizeof(struct stat) + 2, sizeof(char));
     printf("PATH: %s\n", path);
     memcpy(send_request, &op, 2);
     memcpy(&send_request[2], path, strlen(path));
@@ -190,91 +190,54 @@ static int client_open(const char *path, struct fuse_file_info *fi)
 static int client_read(const char *path, char *buf, size_t size, off_t offset,
                       struct fuse_file_info *fi)
 {
-
     uint16_t op = 5;
     op = htons(op);
 
-    int res = 0;
     char *send_request = calloc(1024, sizeof(char));
-    char *recv_data = calloc(1024, sizeof(char));
+    char *recv_data = calloc(2*sizeof(int)+4096, sizeof(char));
+
     bzero(send_request, (sizeof(send_request)));
+    bzero(recv_data, sizeof(recv_data));
     
+    printf("SIZE: %i\n", size);
     printf("PATH: %s\n", path);
+    
     memcpy(send_request, &op, 2);
     memcpy(&send_request[2], &size, sizeof(size_t));
     memcpy(&send_request[2+sizeof(size_t)], &offset, sizeof(off_t));
     sprintf(&send_request[2+sizeof(size_t)+sizeof(off_t)], "%s", path);
-    printf("Send_request: %s\n", &send_request[2+sizeof(size_t)+sizeof(off_t)]);
-    //memcpy(&send_request[2+sizeof(size_t)+sizeof(off_t)], path, strlen(path));
 
     int clientfd = open_clientfd();
-    send(clientfd, send_request, strlen(path)+2+sizeof(int), 0);
-    recv(clientfd, recv_data, 1024, 0);
-
-    ssize_t rsize;
-    memcpy(&rsize, &recv_data, sizeof(ssize_t));
-    rsize = ntohs(rsize);
-    printf("rsize: %i\n", rsize);
-    memcpy(buf, &recv_data[sizeof(ssize_t)], rsize);
-
-
-    //free(send_request);
-    //free(recv_data);
-
-
-    //recv(clientfd, recv_data, 2, 0);
-    /*
-    uint16_t done = 0; 
-    ssize_t rsize;
-    char *temp = buf;
-
-    printf("HERE\n"); 
-    while(!done)
-    {
-        printf("%i\n", done);
-        
-        memcpy(&done, recv_data, 2);
-        memcpy(&rsize, &recv_data[2], 2);
-        memcpy(temp, &recv_data[4], rsize);
-        temp += rsize;
+    send(clientfd, send_request, strlen(path)+2+sizeof(size_t)+sizeof(off_t), 0);
     
-    
-    }    printf("HERE?\n");
-
-    uint16_t result;
-
-    memcpy(&result, recv_data, 2);
-
-    result = ntohs(result);
-
-    if(result == 0)
+    int n;
+    int rsize;
+    int done = 0;
+    char *iter = buf;
+    int totalsize = 0;
+    while(1)
     {
-        res = -ENOENT;
-    }
-    else if(result == 1)
-    {
-        if((fi->flags & 3) != O_RDONLY)
+        n = recv(clientfd, recv_data, 2*sizeof(int)+4096, 0);
+        printf("N: %i\n", n);
+        memcpy(&rsize, recv_data, sizeof(int));
+        memcpy(&done, &recv_data[sizeof(int)], sizeof(int));
+        done = ntohs(done);
+        rsize = ntohs(rsize);
+        memcpy(iter, &recv_data[2*sizeof(int)], rsize);
+        totalsize += rsize;
+        iter += rsize;
+        bzero(recv_data, sizeof(recv_data));
+        if(done)
         {
-            res = -EACCES;
+            break;
         }
+        
     }
-*/
-    
-    /*
-    size_t len;
-    (void) fi;
-    if(strcmp(path, hello_path) != 0)
-        return -ENOENT;
 
-    len = strlen(hello_str);
-    if (offset < len) {
-        if (offset + size > len)
-            size = len - offset;
-        memcpy(buf, hello_str + offset, size);
-    } else
-        size = 0;
-    */
-    return size;
+    free(send_request);
+    free(recv_data);
+
+    return totalsize;
 }
 
 static int client_truncate(const char *path, off_t size)

@@ -140,6 +140,8 @@ void * handle_request(void *arg)
             break;
         case 10:
             break;
+        default:
+            break;
     }
 
     return NULL;
@@ -157,7 +159,9 @@ void server_getatrr(char *buffer, int clientfd)
 
     memcpy(path_temp, mount, strlen(mount));
     memcpy(&path_temp[strlen(mount)], &buffer[2], strlen(&buffer[2]));
-    path = malloc(strlen(path_temp)*sizeof(char));
+
+    path = (char *)calloc(strlen(path_temp), sizeof(char));
+    bzero(path, sizeof(path));
     memcpy(path, path_temp, strlen(path_temp));
 
     printf("Path: %s\n", path);
@@ -198,7 +202,9 @@ void server_open(char *buffer, int clientfd)
 
     memcpy(path_temp, mount, strlen(mount));
     memcpy(&path_temp[strlen(mount)], &buffer[2+sizeof(int)], strlen(&buffer[2+sizeof(int)]));
-    path = malloc(strlen(path_temp)*sizeof(char));
+
+    path = (char *)calloc(strlen(path_temp),sizeof(char));
+    bzero(path, sizeof(path));
     memcpy(path, path_temp, strlen(path_temp));
 
     printf("Path: %s\n", path);
@@ -251,10 +257,11 @@ void server_truncate(char *buffer, int clientfd)
 
 void server_read(char *buffer, int clientfd)
 {
+    //[2:opcode size_t:size off_t:offset N:path]
+
     char path_temp[1024];
     char *path;
-    char send_request[1024];
-    uint16_t done;
+    char send_request[2*sizeof(int)+4096];
     uint16_t response;
     size_t size;
     off_t offset;
@@ -267,42 +274,60 @@ void server_read(char *buffer, int clientfd)
     memcpy(&offset, &buffer[2+sizeof(size_t)], sizeof(off_t));
     
     memcpy(path_temp, mount, strlen(mount));
-    printf("Buffer: %s\n", &buffer[2+sizeof(size_t)+sizeof(off_t)]);
-    send_request[2+sizeof(size_t)+sizeof(off_t)]
     memcpy(&path_temp[strlen(mount)], &buffer[2+sizeof(size_t)+sizeof(off_t)], strlen(&buffer[2+sizeof(size_t)+sizeof(off_t)]));
-    path = malloc(strlen(path_temp)*sizeof(char));
+
+    path = (char *)calloc(strlen(path_temp), sizeof(char));
+    bzero(path, sizeof(path));
     memcpy(path, path_temp, strlen(path_temp));
 
     printf("Path: %s\n", path);
 
     int file = open(path ,O_RDONLY);
-    printf("BEFORE READ\n");
-    n = pread(file, &send_request[sizeof(ssize_t)], size, offset);
-    printf("N: %i", n);
-    n = htons(n);
-   
-    memcpy(&send_request, &n, sizeof(ssize_t));
-    close(file);
-    send(clientfd, send_request, sizeof(ssize_t)+n, 0);
-
-    /*
-    while((n = pread(file, &send_request[2+sizeof(ssize_t)], 1002-sizeof(ssize_t), offset)) > 0)
+    int done = 0;
+    int retdone = htons(done);
+    int retsize;
+    while(!done)
     {
-        if(n < (1000-sizeof(ssize_t)))
+        printf("size: %i\n", size);
+        if(size > 4096)
+        {
+            n = pread(file, &send_request[2*sizeof(int)], 4096, offset);
+            if(n < 4096)
+            {
+                done = 1;
+            }
+            else
+            {
+                size -= n;
+            }
+            offset += n;
+            retsize = htons(n);
+            retdone = htons(done);
+            memcpy(send_request, &retsize, sizeof(int));
+            memcpy(&send_request[sizeof(int)], &retdone, sizeof(int));
+            send(clientfd, send_request, 2*sizeof(int)+n, 0);
+        }
+        else if(size == 0)
         {
             done = 1;
+            retdone = htons(done);
+            memcpy(send_request, &size, sizeof(int));
+            memcpy(&send_request[sizeof(int)], &retdone, sizeof(int));
+            send(clientfd, send_request, 2*sizeof(int)+n, 0);
         }
         else
         {
-            done = 0;
+            n = pread(file, &send_request[2*sizeof(int)], size, offset);
+            done = 1;
+            retdone = htons(done);
+            retsize = htons(n);
+            memcpy(send_request, &retsize, sizeof(int));
+            memcpy(&send_request[sizeof(int)], &retdone, sizeof(int));
+            send(clientfd, send_request, 2*sizeof(int)+n, 0);
         }
-        memcpy(send_request, &done, 2);
-        memcpy(&send_request[2], &n, sizeof(ssize_t));
-        send(clientfd, send_request, 2+sizeof(ssize_t)+n, 0);
+        printf("N: %i\n", n);
         bzero(send_request, sizeof(send_request));
-        offset+=n;
     }
-    */
 }
 
 //Open Listening Socket
